@@ -6,6 +6,17 @@ interface LibraryLoadResult {
   isNew: boolean
 }
 
+interface LibraryExportResult {
+  canceled: boolean
+  path?: string
+}
+
+interface LibraryImportResult {
+  canceled: boolean
+  path?: string
+  data?: { parts: Part[]; templates: PinoutTemplate[] }
+}
+
 interface ImageImportResult {
   hash: string
 }
@@ -32,6 +43,8 @@ interface WwApi {
     load: () => Promise<LibraryLoadResult>
     saveParts: (parts: Part[]) => Promise<boolean>
     saveTemplates: (templates: PinoutTemplate[]) => Promise<boolean>
+    export: (data: { parts: Part[]; templates: PinoutTemplate[] }) => Promise<LibraryExportResult>
+    import: () => Promise<LibraryImportResult>
   }
   image: {
     import: (dataUrl: string, thumbDataUrl?: string) => Promise<ImageImportResult>

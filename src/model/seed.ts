@@ -38,6 +38,28 @@ export function seedLibrary(): { parts: Part[]; templates: PinoutTemplate[] } {
     weightGrams: 0.2
   }
 
+  const shielded4Core: Part = {
+    id: 'seed-wire-shielded4',
+    kind: 'wire',
+    name: '22 AWG 4-core shielded cable',
+    type: 'COTS',
+    internalPartNumber: 'WW-WIRE-0002',
+    manufacturer: 'Alpha Wire',
+    manufacturerPartNumber: '1219/4C SL001',
+    manufacturerPartUrl: 'https://www.alphawire.com/Products/1219/4C',
+    supplier: 'Digi-Key',
+    supplierPartNumber: 'A1219/4C-1000-ND',
+    supplierPartUrl: 'https://www.digikey.com/en/products/detail/alpha-wire/1219-4C-SL001/123456',
+    gauge: '22 AWG',
+    color: 'slate',
+    conductors: 4,
+    colorCode: 'DIN',
+    shield: true,
+    category: 'bundle',
+    cost: { amount: 1.85, currency: 'USD' },
+    weightGrams: 8.5
+  }
+
   const template: PinoutTemplate = {
     id: 'seed-tpl-canpower',
     name: 'CAN + Power (JST GH 4-pos)',
@@ -84,7 +106,7 @@ export function seedLibrary(): { parts: Part[]; templates: PinoutTemplate[] } {
   }
 
   return {
-    parts: [jst, wire, flightController, canSensor],
+    parts: [jst, wire, shielded4Core, flightController, canSensor],
     templates: [template]
   }
 }

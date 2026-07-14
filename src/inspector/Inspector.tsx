@@ -124,14 +124,13 @@ function HarnessInspector({ id }: { id: string }) {
 
   const info = useMemo(() => {
     if (!harness) return null
-    const a = resolveEndpoint(lib, instances, harness.a)
-    const b = resolveEndpoint(lib, instances, harness.b)
+    const eps = harness.endpoints.map((ep) => resolveEndpoint(lib, instances, ep))
     const v = validateHarness(lib, instances, harness)
-    return { a, b, v }
+    return { eps, v }
   }, [harness, lib, instances])
 
   if (!harness || !info) return null
-  const { a, b, v } = info
+  const { eps, v } = info
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -145,22 +144,36 @@ function HarnessInspector({ id }: { id: string }) {
             onChange={(e) => updateHarness(id, { name: e.target.value })}
           />
         </div>
+
         <div>
-          <label className="ww-label">Length (mm)</label>
-          <input
-            type="number"
-            className="ww-input"
-            value={harness.lengthMm ?? ''}
-            onChange={(e) =>
-              updateHarness(id, {
-                lengthMm: e.target.value ? Number(e.target.value) : undefined
-              })
-            }
-          />
+          <label className="ww-label">Endpoints</label>
+          <div className="space-y-1.5">
+            {eps.map((re, i) => (
+              <EndpointCard
+                key={i}
+                label={`End ${String.fromCharCode(65 + i)}`}
+                title={re ? `${re.instance.label} · ${re.port.name}` : 'unresolved'}
+                connector={re?.connector?.name}
+              />
+            ))}
+          </div>
         </div>
 
-        <EndpointCard label="End A" title={endpointTitle(a)} connector={a?.connector?.name} />
-        <EndpointCard label="End B" title={endpointTitle(b)} connector={b?.connector?.name} />
+        {harness.segments.length > 0 && (
+          <div>
+            <label className="ww-label">Segments</label>
+            {harness.segments.map((seg, i) => (
+              <div key={i} className="flex items-center justify-between text-xs">
+                <span className="text-muted">
+                  {seg.fromEnd.toUpperCase()} → {seg.toEnd.toUpperCase()}
+                </span>
+                <span>
+                  {seg.lengthMm != null ? `${seg.lengthMm} mm` : '—'}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
 
         <div className="flex items-center justify-between rounded border border-edge bg-panelalt px-2 py-1.5 text-xs">
           <span className="text-muted">Status</span>
@@ -199,13 +212,6 @@ function HarnessInspector({ id }: { id: string }) {
       </div>
     </div>
   )
-}
-
-function endpointTitle(
-  re: ReturnType<typeof resolveEndpoint> | undefined
-): string {
-  if (!re) return 'unresolved'
-  return `${re.instance.label} · ${re.port.name}`
 }
 
 function EndpointCard({

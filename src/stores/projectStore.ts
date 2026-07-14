@@ -4,10 +4,15 @@ import { nanoid } from 'nanoid'
 import type {
   DeviceInstance,
   Harness,
+  HarnessEndpoint,
   HarnessWire,
   Project
 } from '../model/types'
-import { suggestHarnessName } from '../model/derivation'
+import {
+  pruneInstanceFromHarness,
+  sanitizeTwists,
+  suggestHarnessNames
+} from '../model/derivation'
 
 interface ProjectState {
   project: Project
@@ -22,13 +27,14 @@ interface ProjectState {
   duplicateInstance: (id: string) => void
 
   // harnesses
-  addHarness: (
-    a: Harness['a'],
-    b: Harness['b'],
-    name?: string
-  ) => string | undefined
+  addHarness: (endpoints: HarnessEndpoint[], name?: string) => string | undefined
+  /** Add an endpoint to a harness. Returns true if it was new, false if already present. */
+  addEndpointToHarness: (harnessId: string, endpoint: HarnessEndpoint) => boolean
+  /** Find the harness id that contains this endpoint, if any. */
+  findHarnessByEndpoint: (deviceInstanceId: string, portId: string) => string | undefined
   updateHarness: (id: string, patch: Partial<Omit<Harness, 'id'>>) => void
   setHarnessWires: (id: string, wires: HarnessWire[]) => void
+  setHarnessSegment: (id: string, fromEnd: string, toEnd: string, patch: { lengthMm?: number; label?: string }) => void
   removeHarness: (id: string) => void
 
   // whole-project
@@ -49,17 +55,47 @@ function emptyProject(): Project {
   }
 }
 
-/** True if the port is already the endpoint of some harness (one harness per port, v1). */
-function portOccupied(
+function ensureHarness(h: Harness): Harness {
+  const maybeOld = h as unknown as { a?: HarnessEndpoint; b?: HarnessEndpoint; lengthMm?: number; description?: string; notes?: string }
+  if (!h.endpoints && maybeOld.a) {
+    return {
+      id: h.id,
+      name: h.name,
+      endpoints: [maybeOld.a!, maybeOld.b!],
+      wires: h.wires ?? [],
+      segments: maybeOld.lengthMm != null
+        ? [{ fromEnd: 'a', toEnd: 'b', lengthMm: maybeOld.lengthMm }]
+        : [],
+      description: maybeOld.description,
+      notes: maybeOld.notes
+    }
+  }
+  return {
+    id: h.id,
+    name: h.name,
+    endpoints: h.endpoints ?? [],
+    wires: h.wires ?? [],
+    segments: h.segments ?? [],
+    description: h.description,
+    notes: h.notes
+  }
+}
+
+function endpointMatches(e: HarnessEndpoint, deviceInstanceId: string, portId: string): boolean {
+  return e.deviceInstanceId === deviceInstanceId && e.portId === portId
+}
+
+function findHarnessByEndpoint(
   harnesses: Harness[],
   deviceInstanceId: string,
   portId: string
-): boolean {
-  return harnesses.some(
-    (h) =>
-      (h.a.deviceInstanceId === deviceInstanceId && h.a.portId === portId) ||
-      (h.b.deviceInstanceId === deviceInstanceId && h.b.portId === portId)
-  )
+): string | undefined {
+  for (const h of harnesses) {
+    for (const ep of h.endpoints) {
+      if (endpointMatches(ep, deviceInstanceId, portId)) return h.id
+    }
+  }
+  return undefined
 }
 
 export const useProjectStore = create<ProjectState>()(
@@ -97,7 +133,6 @@ export const useProjectStore = create<ProjectState>()(
       },
 
       setInstanceLabel: (id, label) => {
-        // Coalesced: typing a label produces one undo step, not one per keystroke.
         coalesceUndo(() =>
           set((s) => ({
             project: {
@@ -117,9 +152,9 @@ export const useProjectStore = create<ProjectState>()(
           project: {
             ...s.project,
             deviceInstances: s.project.deviceInstances.filter((d) => d.id !== id),
-            harnesses: s.project.harnesses.filter(
-              (h) => h.a.deviceInstanceId !== id && h.b.deviceInstanceId !== id
-            )
+            harnesses: s.project.harnesses
+              .map((h) => pruneInstanceFromHarness(h, id))
+              .filter((h): h is Harness => h !== null)
           },
           dirty: true
         }))
@@ -144,21 +179,33 @@ export const useProjectStore = create<ProjectState>()(
         }))
       },
 
-      addHarness: (a, b, name) => {
+      addHarness: (endpoints, name) => {
         flushCoalesce()
+        if (endpoints.length < 2) return undefined
         const { harnesses, deviceInstances } = get().project
-        if (a.deviceInstanceId === b.deviceInstanceId) return undefined
-        if (portOccupied(harnesses, a.deviceInstanceId, a.portId)) return undefined
-        if (portOccupied(harnesses, b.deviceInstanceId, b.portId)) return undefined
+
+        // Check if any endpoint is already in a harness — if so, join it
+        for (const ep of endpoints) {
+          const existingId = findHarnessByEndpoint(harnesses, ep.deviceInstanceId, ep.portId)
+          if (existingId) {
+            for (const ep2 of endpoints) {
+              addEndpointToHarnessFn(existingId, ep2)
+            }
+            return existingId
+          }
+        }
+
         const id = nanoid()
+        const labels = suggestHarnessNames(
+          deviceInstances,
+          endpoints.map((e) => e.deviceInstanceId)
+        )
         const harness: Harness = {
           id,
-          name:
-            name ??
-            suggestHarnessName(deviceInstances, a.deviceInstanceId, b.deviceInstanceId),
-          a,
-          b,
-          wires: []
+          name: name ?? labels,
+          endpoints,
+          wires: [],
+          segments: []
         }
         set((s) => ({
           project: { ...s.project, harnesses: [...s.project.harnesses, harness] },
@@ -167,8 +214,16 @@ export const useProjectStore = create<ProjectState>()(
         return id
       },
 
+      addEndpointToHarness: (harnessId, endpoint) => {
+        flushCoalesce()
+        return addEndpointToHarnessFn(harnessId, endpoint)
+      },
+
+      findHarnessByEndpoint: (deviceInstanceId, portId) => {
+        return findHarnessByEndpoint(get().project.harnesses, deviceInstanceId, portId)
+      },
+
       updateHarness: (id, patch) => {
-        // Coalesced: name/length field edits merge into one undo step.
         coalesceUndo(() =>
           set((s) => ({
             project: {
@@ -188,8 +243,29 @@ export const useProjectStore = create<ProjectState>()(
           project: {
             ...s.project,
             harnesses: s.project.harnesses.map((h) =>
-              h.id === id ? { ...h, wires } : h
+              h.id === id ? { ...h, wires: sanitizeTwists(wires) } : h
             )
+          },
+          dirty: true
+        }))
+      },
+
+      setHarnessSegment: (id, fromEnd, toEnd, patch) => {
+        flushCoalesce()
+        set((s) => ({
+          project: {
+            ...s.project,
+            harnesses: s.project.harnesses.map((h) => {
+              if (h.id !== id) return h
+              const segs = [...h.segments]
+              const idx = segs.findIndex((seg) => seg.fromEnd === fromEnd && seg.toEnd === toEnd)
+              if (idx >= 0) {
+                segs[idx] = { ...segs[idx], ...patch }
+              } else {
+                segs.push({ fromEnd, toEnd, ...patch })
+              }
+              return { ...h, segments: segs }
+            })
           },
           dirty: true
         }))
@@ -208,7 +284,14 @@ export const useProjectStore = create<ProjectState>()(
 
       loadProject: (project, filePath) => {
         flushCoalesce()
-        set({ project, filePath, dirty: false })
+        set({
+          project: {
+            ...project,
+            harnesses: project.harnesses.map(ensureHarness)
+          },
+          filePath,
+          dirty: false
+        })
       },
 
       newProject: () => {
@@ -264,4 +347,24 @@ function flushCoalesce(): void {
   clearTimeout(coalesceTimer)
   coalesceTimer = null
   useProjectStore.temporal.getState().resume()
+}
+
+function addEndpointToHarnessFn(harnessId: string, endpoint: HarnessEndpoint): boolean {
+  const { harnesses } = useProjectStore.getState().project
+  if (!harnesses.some((h) => h.id === harnessId)) return false
+  // A port belongs to at most one harness — refuse if it's already an
+  // endpoint anywhere (including this harness).
+  if (findHarnessByEndpoint(harnesses, endpoint.deviceInstanceId, endpoint.portId)) {
+    return false
+  }
+  useProjectStore.setState((s) => ({
+    project: {
+      ...s.project,
+      harnesses: s.project.harnesses.map((h) =>
+        h.id === harnessId ? { ...h, endpoints: [...h.endpoints, endpoint] } : h
+      )
+    },
+    dirty: true
+  }))
+  return true
 }

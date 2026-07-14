@@ -29,6 +29,7 @@ interface UiState {
   partEditor: PartEditorTarget | null
   templateEditorId: string | null | undefined // undefined = closed, null = new, string = edit
   harnessEditorId: string | null
+  libraryManagerOpen: boolean
 
   setLibrarySearch: (s: string) => void
   toggleLibrary: () => void
@@ -41,6 +42,7 @@ interface UiState {
   closeTemplateEditor: () => void
   openHarnessEditor: (id: string) => void
   closeHarnessEditor: () => void
+  toggleLibraryManager: () => void
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -53,6 +55,7 @@ export const useUiStore = create<UiState>((set) => ({
   partEditor: null,
   templateEditorId: undefined,
   harnessEditorId: null,
+  libraryManagerOpen: false,
 
   setLibrarySearch: (s) => set({ librarySearch: s }),
   toggleLibrary: () => set((st) => ({ libraryCollapsed: !st.libraryCollapsed })),
@@ -65,5 +68,7 @@ export const useUiStore = create<UiState>((set) => ({
   openTemplateEditor: (id) => set({ templateEditorId: id }),
   closeTemplateEditor: () => set({ templateEditorId: undefined }),
   openHarnessEditor: (harnessEditorId) => set({ harnessEditorId }),
-  closeHarnessEditor: () => set({ harnessEditorId: null })
+  closeHarnessEditor: () => set({ harnessEditorId: null }),
+  toggleLibraryManager: () =>
+    set((st) => ({ libraryManagerOpen: !st.libraryManagerOpen }))
 }))

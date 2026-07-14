@@ -78,8 +78,14 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   upsertPart: (part) => {
     const parts = get().parts.slice()
     const i = parts.findIndex((p) => p.id === part.id)
-    if (i >= 0) parts[i] = part
-    else parts.push(part)
+    const now = Date.now()
+    const stamped: Part = {
+      ...part,
+      createdAt: part.createdAt ?? (i >= 0 ? parts[i].createdAt : now),
+      updatedAt: now
+    }
+    if (i >= 0) parts[i] = stamped
+    else parts.push(stamped)
     set({ parts })
     persistParts.call(parts)
   },

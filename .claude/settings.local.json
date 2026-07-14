@@ -12,7 +12,9 @@
       "Bash(npm test *)",
       "Bash(echo \"typecheck: $?\")",
       "Bash(wine --version)",
-      "Bash(timeout 8 curl -sI https://github.com)"
+      "Bash(timeout 8 curl -sI https://github.com)",
+      "Bash(npx tsc *)",
+      "Bash(npx vitest *)"
     ]
   }
 }

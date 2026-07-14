@@ -1,6 +1,6 @@
 /**
  * Library images are served by the main process over ww://image/… so Chromium
- * caches them natively — no base64 IPC round-trips. 'thumb' serves the ≤128px
+ * caches them natively — no base64 IPC round-trips. 'thumb' serves the ≤256px
  * WebP generated at import time, falling back to the original for old imports.
  */
 export function imageUrl(
@@ -21,9 +21,11 @@ export function fileToDataUrl(file: File): Promise<string> {
 }
 
 /** Render a ≤max px WebP thumbnail from an image data URL (undefined on failure). */
+// 256 keeps device-node image panels (~172 css px wide) crisp on hiDPI while
+// staying far cheaper to decode than the original.
 export function makeThumbDataUrl(
   dataUrl: string,
-  max = 128
+  max = 256
 ): Promise<string | undefined> {
   return new Promise((resolve) => {
     const img = new Image()

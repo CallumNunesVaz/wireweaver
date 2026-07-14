@@ -14,17 +14,19 @@ const SIDE_TO_POSITION: Record<PortSide, Position> = {
   bottom: Position.Bottom
 }
 
-export type DeviceNodeData = { instanceId: string }
+export type DeviceNodeData = {
+  instanceId: string
+  connectSource?: { instanceId: string; portId: string } | null
+}
 
-function DeviceNodeImpl({ id, selected }: NodeProps) {
+function DeviceNodeImpl({ id, selected, data }: NodeProps) {
+  const nodeData = data as DeviceNodeData
   const instance = useProjectStore((s) =>
     s.project.deviceInstances.find((d) => d.id === id)
   )
   const part = useLibraryStore((s) =>
     instance ? s.parts.find((p) => p.id === instance.partId) : undefined
   )
-  // Precomputed at hover time in uiStore: this selector returns a primitive, so
-  // only the two endpoint nodes re-render when harness hover changes.
   const hoveredPortId = useUiStore(
     (s) => s.hoverEndpoints.find((e) => e.instanceId === id)?.portId
   )
@@ -34,8 +36,9 @@ function DeviceNodeImpl({ id, selected }: NodeProps) {
   const device = part && isDevice(part) ? part : undefined
   const ports = device?.ports ?? []
 
-  // Tooltip only — read without subscribing so template edits don't re-render
-  // every node on the canvas.
+  const isConnectionTarget =
+    nodeData.connectSource != null && nodeData.connectSource.instanceId !== id
+
   const portSignals = (port: DevicePort): string => {
     const lib = useLibraryStore.getState()
     const tpl = lib.templates.find((t) => t.id === port.pinoutTemplateId)
@@ -63,13 +66,11 @@ function DeviceNodeImpl({ id, selected }: NodeProps) {
       style={{ width: 180, minHeight: 84 }}
     >
       <div className="flex items-center gap-2 border-b border-edge px-2 py-1.5">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded bg-edge">
-          {img ? (
-            <img src={img} className="h-full w-full object-cover" alt="" />
-          ) : (
+        {!img && (
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded bg-edge">
             <Cpu size={16} className="text-muted" />
-          )}
-        </div>
+          </div>
+        )}
         <div className="min-w-0">
           <div className="truncate text-xs font-semibold">{instance.label}</div>
           <div className="truncate text-[10px] text-muted">
@@ -77,6 +78,17 @@ function DeviceNodeImpl({ id, selected }: NodeProps) {
           </div>
         </div>
       </div>
+
+      {img && (
+        <div className="flex h-24 items-center justify-center overflow-hidden border-b border-edge bg-edge/40 p-1">
+          <img
+            src={img}
+            className="max-h-full max-w-full object-contain"
+            alt=""
+            draggable={false}
+          />
+        </div>
+      )}
 
       <div className="px-2 py-1.5 text-[10px] text-muted">
         {ports.length} port{ports.length === 1 ? '' : 's'}
@@ -92,6 +104,8 @@ function DeviceNodeImpl({ id, selected }: NodeProps) {
           ? { top: `${frac}%` }
           : { left: `${frac}%` }
         const highlight = hoveredPortId === port.id
+        const connectTarget = isConnectionTarget
+        const targetId = `${port.id}-tgt`
         return (
           <div key={port.id}>
             <Handle
@@ -99,17 +113,40 @@ function DeviceNodeImpl({ id, selected }: NodeProps) {
               type="source"
               position={pos}
               isConnectableStart
-              isConnectableEnd
               title={portSignals(port) || port.name}
               style={{
                 ...style,
-                width: 10,
-                height: 10,
-                background: highlight ? '#5b9bff' : '#8b8f98',
-                border: '2px solid #14161b'
+                width: connectTarget ? 12 : 10,
+                height: connectTarget ? 12: 10,
+                background: highlight
+                  ? '#5b9bff'
+                  : connectTarget
+                    ? 'rgba(91,155,255,0.5)'
+                    : '#8b8f98',
+                border: connectTarget
+                  ? '2px solid #5b9bff'
+                  : '2px solid #14161b',
+                boxShadow: connectTarget ? '0 0 6px rgba(91,155,255,0.5)' : 'none'
               }}
             />
-            <PortLabel side={port.side} frac={frac} name={port.name} highlight={highlight} />
+            <Handle
+              id={targetId}
+              type="target"
+              position={pos}
+              isConnectableEnd
+              style={{
+                ...style,
+                width: connectTarget ? 18 : 14,
+                height: connectTarget ? 18 : 14,
+                background: 'transparent',
+                border: connectTarget
+                  ? '2px dashed rgba(91,155,255,0.5)'
+                  : '2px solid transparent',
+                borderRadius: '50%',
+                zIndex: -1
+              }}
+            />
+            <PortLabel side={port.side} frac={frac} name={port.name} highlight={highlight || connectTarget} />
           </div>
         )
       })}

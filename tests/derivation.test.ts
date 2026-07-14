@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest'
 import {
   resolveEndpoint,
   validateHarness,
-  suggestHarnessName,
+  suggestHarnessNames,
+  pruneInstanceFromHarness,
+  sanitizeTwists,
   type LibraryLike
 } from '../src/model/derivation'
 import type {
@@ -82,9 +84,12 @@ describe('validateHarness', () => {
   const base: Harness = {
     id: 'h1',
     name: 'FC1-FC2',
-    a: { deviceInstanceId: 'i1', portId: 'portA' },
-    b: { deviceInstanceId: 'i2', portId: 'portA' },
-    wires: []
+    endpoints: [
+      { deviceInstanceId: 'i1', portId: 'portA' },
+      { deviceInstanceId: 'i2', portId: 'portA' }
+    ],
+    wires: [],
+    segments: []
   }
 
   it('reports unwired with no wires', () => {
@@ -94,8 +99,8 @@ describe('validateHarness', () => {
   it('reports wired when all pins are connected straight-through', () => {
     const wires = [1, 2, 3, 4].map((p) => ({
       id: `w${p}`,
-      from: { end: 'a' as const, position: p },
-      to: { end: 'b' as const, position: p }
+      from: { end: 'a', position: p },
+      to: { end: 'b', position: p }
     }))
     const v = validateHarness(lib, instances, { ...base, wires })
     expect(v.status).toBe('wired')
@@ -118,10 +123,80 @@ describe('validateHarness', () => {
     expect(v.status).toBe('invalid')
     expect(v.orphanWireIds).toContain('w')
   })
+
+  it('counts multi-conductor strands between the same pins as one connection', () => {
+    // A 4-core bundle assigned to one pin pair creates 4 parallel strands;
+    // that must not read as a fully wired harness.
+    const wires = [1, 2, 3, 4].map((n) => ({
+      id: `s${n}`,
+      from: { end: 'a', position: 1 },
+      to: { end: 'b', position: 1 },
+      wirePartId: 'bundle'
+    }))
+    const v = validateHarness(lib, instances, { ...base, wires })
+    expect(v.wireCount).toBe(1)
+    expect(v.status).toBe('partial')
+  })
 })
 
-describe('suggestHarnessName', () => {
-  it('joins the two instance labels', () => {
-    expect(suggestHarnessName(instances, 'i1', 'i2')).toBe('FC #1–FC #2')
+describe('pruneInstanceFromHarness', () => {
+  const threeWay: Harness = {
+    id: 'h1',
+    name: 'trunk',
+    endpoints: [
+      { deviceInstanceId: 'i1', portId: 'portA' },
+      { deviceInstanceId: 'i2', portId: 'portA' },
+      { deviceInstanceId: 'i3', portId: 'portA' }
+    ],
+    wires: [
+      { id: 'w1', from: { end: 'a', position: 1 }, to: { end: 'b', position: 1 } },
+      { id: 'w2', from: { end: 'b', position: 2 }, to: { end: 'c', position: 2 } },
+      { id: 'w3', from: { end: 'a', position: 3 }, to: { end: 'c', position: 3 } }
+    ],
+    segments: [
+      { fromEnd: 'a', toEnd: 'b', lengthMm: 100 },
+      { fromEnd: 'b', toEnd: 'c', lengthMm: 200 }
+    ]
+  }
+
+  it('returns the harness unchanged when the instance is not an endpoint', () => {
+    expect(pruneInstanceFromHarness(threeWay, 'other')).toBe(threeWay)
+  })
+
+  it('drops wires/segments touching the removed endpoint and remaps labels', () => {
+    const pruned = pruneInstanceFromHarness(threeWay, 'i1')!
+    expect(pruned.endpoints.map((e) => e.deviceInstanceId)).toEqual(['i2', 'i3'])
+    // old b→a, old c→b; w1/w3 touched removed 'a' and are gone, w2 remapped.
+    expect(pruned.wires).toHaveLength(1)
+    expect(pruned.wires[0]).toMatchObject({
+      from: { end: 'a', position: 2 },
+      to: { end: 'b', position: 2 }
+    })
+    expect(pruned.segments).toEqual([{ fromEnd: 'a', toEnd: 'b', lengthMm: 200 }])
+  })
+
+  it('returns null when fewer than two endpoints remain', () => {
+    const twoWay: Harness = { ...threeWay, endpoints: threeWay.endpoints.slice(0, 2) }
+    expect(pruneInstanceFromHarness(twoWay, 'i1')).toBeNull()
+  })
+})
+
+describe('sanitizeTwists', () => {
+  it('clears twistedWith pointing at removed wires and keeps valid pairs', () => {
+    const wires = [
+      { id: 'w1', from: { end: 'a', position: 1 }, to: { end: 'b', position: 1 }, twistedWith: 'gone' },
+      { id: 'w2', from: { end: 'a', position: 2 }, to: { end: 'b', position: 2 }, twistedWith: 'w3' },
+      { id: 'w3', from: { end: 'a', position: 3 }, to: { end: 'b', position: 3 }, twistedWith: 'w2' }
+    ]
+    const out = sanitizeTwists(wires)
+    expect(out[0].twistedWith).toBeUndefined()
+    expect(out[1].twistedWith).toBe('w3')
+    expect(out[2].twistedWith).toBe('w2')
+  })
+})
+
+describe('suggestHarnessNames', () => {
+  it('joins the instance labels', () => {
+    expect(suggestHarnessNames(instances, ['i1', 'i2'])).toBe('FC #1–FC #2')
   })
 })

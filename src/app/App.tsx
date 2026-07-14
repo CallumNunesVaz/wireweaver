@@ -12,7 +12,8 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   FileDown,
-  Clock
+  Clock,
+  BookOpen
 } from 'lucide-react'
 import { ErrorBoundary } from '../shared/ErrorBoundary'
 import { Toaster, toast } from '../shared/toast'
@@ -37,6 +38,9 @@ const PinoutTemplateEditor = lazy(() =>
 )
 const HarnessEditor = lazy(() =>
   import('../harness/HarnessEditor').then((m) => ({ default: m.HarnessEditor }))
+)
+const LibraryManager = lazy(() =>
+  import('../library/LibraryManager').then((m) => ({ default: m.LibraryManager }))
 )
 
 function errMessage(err: unknown): string {
@@ -65,6 +69,8 @@ export default function App() {
   const partEditor = useUiStore((s) => s.partEditor)
   const templateEditorId = useUiStore((s) => s.templateEditorId)
   const harnessEditorId = useUiStore((s) => s.harnessEditorId)
+  const libraryManagerOpen = useUiStore((s) => s.libraryManagerOpen)
+  const toggleLibraryManager = useUiStore((s) => s.toggleLibraryManager)
 
   const [recentProjects, setRecentProjects] = useState<
     { name: string; path: string; openedAt: number }[]
@@ -221,6 +227,9 @@ export default function App() {
         e.preventDefault()
         const sel = useUiStore.getState().selection
         if (sel?.type === 'instance') duplicateInstance(sel.id)
+      } else if (key === 'l') {
+        e.preventDefault()
+        toggleLibraryManager()
       } else if (key === 'z' && !e.shiftKey) {
         e.preventDefault()
         doUndo()
@@ -231,7 +240,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [handleSave, handleOpen, handleNew, focusLibrarySearch, doUndo, doRedo, duplicateInstance])
+  }, [handleSave, handleOpen, handleNew, focusLibrarySearch, doUndo, doRedo, duplicateInstance, toggleLibraryManager])
 
   return (
     <ReactFlowProvider>
@@ -273,6 +282,9 @@ export default function App() {
             </button>
             <button className="ww-btn" onClick={handleBom} title="Export BOM (CSV)">
               <FileDown size={16} /> BOM
+            </button>
+            <button className="ww-btn" onClick={toggleLibraryManager} title="Library Manager (Ctrl+L)">
+              <BookOpen size={16} /> Library
             </button>
             <button className="ww-btn" onClick={handleNew} title="New project (Ctrl+N)">
               <FilePlus2 size={16} /> New
@@ -354,6 +366,11 @@ export default function App() {
         {harnessEditorId && (
           <ErrorBoundary>
             <HarnessEditor harnessId={harnessEditorId} />
+          </ErrorBoundary>
+        )}
+        {libraryManagerOpen && (
+          <ErrorBoundary>
+            <LibraryManager />
           </ErrorBoundary>
         )}
       </Suspense>

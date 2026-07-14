@@ -47,10 +47,10 @@ export function buildBom(project: Project, lib: LibraryLike): BomRow[] {
   // Devices from instances.
   for (const inst of project.deviceInstances) bump(inst.partId)
 
-  // Connectors: two per harness (one per mated end), derived from ports.
+  // Connectors: one per harness endpoint, derived from ports.
   for (const h of project.harnesses) {
-    for (const ref of [h.a, h.b]) {
-      const re = resolveEndpoint(lib, project.deviceInstances, ref)
+    for (const ep of h.endpoints) {
+      const re = resolveEndpoint(lib, project.deviceInstances, ep)
       if (re?.connector) bump(re.connector.id)
     }
     // Wire parts assigned to individual wires.

@@ -69,8 +69,10 @@ const project: Project = {
     {
       id: 'h1',
       name: 'FC1-FC2',
-      a: { deviceInstanceId: 'i1', portId: 'portA' },
-      b: { deviceInstanceId: 'i2', portId: 'portA' },
+      endpoints: [
+        { deviceInstanceId: 'i1', portId: 'portA' },
+        { deviceInstanceId: 'i2', portId: 'portA' }
+      ],
       wires: [
         {
           id: 'w1',

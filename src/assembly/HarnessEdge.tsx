@@ -10,10 +10,12 @@ import { useUiStore } from '../stores/uiStore'
 import type { HarnessStatus } from '../model/derivation'
 
 export type HarnessEdgeData = {
+  harnessId?: string
   name: string
   status: HarnessStatus
   wireCount: number
   hovered: boolean
+  showLabel?: boolean
 }
 
 const STATUS_COLOR: Record<HarnessStatus, string> = {
@@ -24,7 +26,6 @@ const STATUS_COLOR: Record<HarnessStatus, string> = {
 }
 
 function HarnessEdgeImpl({
-  id,
   sourceX,
   sourceY,
   targetX,
@@ -60,22 +61,26 @@ function HarnessEdgeImpl({
         }}
       />
       <EdgeLabelRenderer>
-        <div
-          className="nodrag nopan absolute flex cursor-pointer items-center gap-1 rounded border bg-panel px-1.5 py-0.5 text-[10px]"
-          style={{
-            transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
-            borderColor: selected ? '#5b9bff' : '#2f343f',
-            pointerEvents: 'all'
-          }}
-          onDoubleClick={() => openHarnessEditor(id)}
-          title="Double-click to edit harness"
-        >
-          <StatusIcon status={status} color={color} />
-          <span className="max-w-[140px] truncate">{d?.name}</span>
-          <span className="text-muted">· {d?.wireCount ?? 0}w</span>
-        </div>
+        {d?.showLabel !== false && (
+          <div
+            className="nodrag nopan absolute flex cursor-pointer items-center gap-1 rounded border bg-panel px-1.5 py-0.5 text-[10px]"
+            style={{
+              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+              borderColor: selected ? '#5b9bff' : '#2f343f',
+              pointerEvents: 'all'
+            }}
+            onDoubleClick={() => {
+              if (d?.harnessId) openHarnessEditor(d.harnessId)
+            }}
+            title="Double-click to edit harness"
+          >
+            <StatusIcon status={status} color={color} />
+            <span className="max-w-[140px] truncate">{d?.name}</span>
+            <span className="text-muted">· {d?.wireCount ?? 0}w</span>
+          </div>
+        )}
 
-        {isHovered && (
+        {isHovered && d?.showLabel !== false && (
           <button
             className="nodrag nopan absolute flex items-center gap-1 rounded border border-accent bg-accent px-1.5 py-0.5 text-[10px] font-medium text-white shadow-lg hover:brightness-110"
             style={{
@@ -84,7 +89,7 @@ function HarnessEdgeImpl({
             }}
             onClick={(e) => {
               e.stopPropagation()
-              openHarnessEditor(id)
+              if (d?.harnessId) openHarnessEditor(d.harnessId)
             }}
             title="Edit harness wiring"
           >

@@ -267,7 +267,7 @@ export function PartEditor() {
   )
 }
 
-function Field({
+export function Field({
   label,
   children,
   span2
@@ -284,7 +284,7 @@ function Field({
   )
 }
 
-function LinkedField({
+export function LinkedField({
   label,
   value,
   url,
@@ -326,7 +326,7 @@ function LinkedField({
   )
 }
 
-function ConnectorFields({
+export function ConnectorFields({
   part,
   patch
 }: {
@@ -362,7 +362,7 @@ function ConnectorFields({
   )
 }
 
-function WireFields({
+export function WireFields({
   part,
   patch
 }: {
@@ -400,7 +400,7 @@ function WireFields({
   )
 }
 
-function PortEditor({
+export function PortEditor({
   device,
   patch,
   templates,

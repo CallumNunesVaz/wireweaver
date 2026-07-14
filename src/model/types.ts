@@ -23,6 +23,8 @@ export interface PartBase {
   cost?: Money
   weightGrams?: number
   notes?: string
+  createdAt?: number
+  updatedAt?: number
 }
 
 // ---------- The three part kinds ----------
@@ -53,9 +55,16 @@ export interface WirePart extends PartBase {
   gauge?: string
   color?: string
   conductors?: number
+  colorCode?: ColorCode
+  shield?: boolean
+  category?: WireCategory
 }
 
 export type Part = DevicePart | ConnectorPart | WirePart
+
+// ---------- Wire part extras ----------
+export type ColorCode = 'DIN' | 'IEC' | 'TEL' | 'T568A' | 'T568B'
+export type WireCategory = 'cable' | 'bundle'
 
 // ---------- Pinout templates (logical, not physical) ----------
 export type SignalClass = 'power' | 'ground' | 'data' | 'shield' | 'nc'
@@ -86,21 +95,41 @@ export interface HarnessEndpoint {
   portId: string
 }
 
+/** Endpoint labels are lowercase letters: 'a', 'b', 'c', ... mapped from indices. */
+export type EndLabel = string
+
+export function endIndex(label: EndLabel): number {
+  return label.charCodeAt(0) - 97
+}
+
+export function endLabel(index: number): EndLabel {
+  return String.fromCharCode(97 + index)
+}
+
 export interface HarnessWire {
   id: string
-  from: { end: 'a' | 'b'; position: number }
-  to: { end: 'a' | 'b'; position: number }
+  from: { end: EndLabel; position: number }
+  to: { end: EndLabel; position: number }
   wirePartId?: string
   color?: string
+  twistedWith?: string
+}
+
+export interface HarnessSegment {
+  fromEnd: EndLabel
+  toEnd: EndLabel
+  lengthMm?: number
+  label?: string
 }
 
 export interface Harness {
   id: string
   name: string
-  a: HarnessEndpoint
-  b: HarnessEndpoint
+  endpoints: HarnessEndpoint[]
   wires: HarnessWire[]
-  lengthMm?: number
+  segments: HarnessSegment[]
+  description?: string
+  notes?: string
 }
 
 export interface Project {

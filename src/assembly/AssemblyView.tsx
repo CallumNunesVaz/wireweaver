@@ -21,11 +21,12 @@ import { DeviceNode } from './DeviceNode'
 import { HarnessEdge } from './HarnessEdge'
 import { autoLayout } from './autoLayout'
 import { ContextMenu, type CtxItem } from '../shared/ContextMenu'
+import { toast } from '../shared/toast'
 import { useLibraryStore, selectLibraryLike } from '../stores/libraryStore'
 import { useProjectStore, coalesceUndo } from '../stores/projectStore'
 import { useUiStore } from '../stores/uiStore'
 import { validateHarness, type HarnessValidation } from '../model/derivation'
-import { isDevice } from '../model/types'
+import { isDevice, type HarnessEndpoint } from '../model/types'
 
 const nodeTypes: NodeTypes = { device: DeviceNode }
 const edgeTypes: EdgeTypes = { harness: HarnessEdge }
@@ -44,7 +45,6 @@ export function AssemblyView() {
   const removeInstance = useProjectStore((s) => s.removeInstance)
   const duplicateInstance = useProjectStore((s) => s.duplicateInstance)
   const removeHarness = useProjectStore((s) => s.removeHarness)
-  const addHarness = useProjectStore((s) => s.addHarness)
 
   const parts = useLibraryStore((s) => s.parts)
   const templates = useLibraryStore((s) => s.templates)
@@ -57,6 +57,10 @@ export function AssemblyView() {
   const openPartEditor = useUiStore((s) => s.openPartEditor)
 
   const [menu, setMenu] = useState<Menu | null>(null)
+  const [connectSource, setConnectSource] = useState<{
+    instanceId: string
+    portId: string
+  } | null>(null)
 
   // React Flow drives node motion locally; we resync structure/positions from
   // the store whenever the instance list changes (add/remove/undo/redo).
@@ -68,12 +72,15 @@ export function AssemblyView() {
         id: inst.id,
         type: 'device',
         position: inst.position,
-        data: { instanceId: inst.id },
+        data: {
+          instanceId: inst.id,
+          connectSource
+        },
         selected: selection?.type === 'instance' && selection.id === inst.id
       }))
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [instances])
+  }, [instances, connectSource])
 
   const lib = useMemo(
     () => selectLibraryLike({ parts, templates }),
@@ -89,25 +96,36 @@ export function AssemblyView() {
   }, [harnesses, instances, lib])
 
   const edges: Edge[] = useMemo(
-    () =>
-      harnesses.map((h) => {
+    () => {
+      const out: Edge[] = []
+      for (const h of harnesses) {
         const v = validations.get(h.id)
-        return {
-          id: h.id,
-          source: h.a.deviceInstanceId,
-          sourceHandle: h.a.portId,
-          target: h.b.deviceInstanceId,
-          targetHandle: h.b.portId,
-          type: 'harness',
-          selected: selection?.type === 'harness' && selection.id === h.id,
-          data: {
-            name: h.name,
-            status: v?.status ?? 'unwired',
-            wireCount: v?.wireCount ?? 0,
-            hovered: hoverHarnessId === h.id
-          }
+        const eps = h.endpoints
+        if (eps.length < 2) continue
+        const root = eps[0]
+        for (let i = 1; i < eps.length; i++) {
+          const ep = eps[i]
+          out.push({
+            id: `${h.id}-seg-${i}`,
+            source: root.deviceInstanceId,
+            sourceHandle: root.portId,
+            target: ep.deviceInstanceId,
+            targetHandle: `${ep.portId}-tgt`,
+            type: 'harness',
+            selected: selection?.type === 'harness' && selection.id === h.id,
+            data: {
+              harnessId: h.id,
+              name: h.name,
+              status: v?.status ?? 'unwired',
+              wireCount: v?.wireCount ?? 0,
+              hovered: hoverHarnessId === h.id,
+              showLabel: i === 1
+            }
+          })
         }
-      }),
+      }
+      return out
+    },
     [harnesses, validations, selection, hoverHarnessId]
   )
 
@@ -127,38 +145,59 @@ export function AssemblyView() {
 
   const onEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
-      for (const c of changes) if (c.type === 'remove') removeHarness(c.id)
+      // When an edge is removed via Delete key, try to find its harness
+      for (const c of changes) {
+        if (c.type === 'remove') {
+          const edge = edges.find((e) => e.id === c.id)
+          if (edge?.data?.harnessId) removeHarness(edge.data.harnessId as string)
+        }
+      }
     },
-    [removeHarness]
+    [edges, removeHarness]
   )
 
   const isValidConnection = useCallback(
     (c: Connection | Edge) => {
       if (!c.source || !c.target) return false
       if (c.source === c.target) return false
-      const occupied = (deviceInstanceId: string, portId: string | null | undefined) =>
-        harnesses.some(
-          (h) =>
-            (h.a.deviceInstanceId === deviceInstanceId && h.a.portId === portId) ||
-            (h.b.deviceInstanceId === deviceInstanceId && h.b.portId === portId)
-        )
-      if (occupied(c.source, c.sourceHandle)) return false
-      if (occupied(c.target, c.targetHandle)) return false
       return true
     },
-    [harnesses]
+    []
   )
 
   const onConnect = useCallback(
     (c: Connection) => {
       if (!c.sourceHandle || !c.targetHandle) return
-      const id = addHarness(
-        { deviceInstanceId: c.source, portId: c.sourceHandle },
-        { deviceInstanceId: c.target, portId: c.targetHandle }
-      )
+      const targetPortId = c.targetHandle.endsWith('-tgt')
+        ? c.targetHandle.slice(0, -4)
+        : c.targetHandle
+
+      const ep1: HarnessEndpoint = { deviceInstanceId: c.source, portId: c.sourceHandle }
+      const ep2: HarnessEndpoint = { deviceInstanceId: c.target, portId: targetPortId }
+
+      const st = useProjectStore.getState()
+      const existing1 = st.findHarnessByEndpoint(ep1.deviceInstanceId, ep1.portId)
+      const existing2 = st.findHarnessByEndpoint(ep2.deviceInstanceId, ep2.portId)
+
+      // A port belongs to at most one harness: joining two existing harnesses
+      // would put ports in both, so refuse instead of silently merging.
+      if (existing1 && existing2) {
+        if (existing1 !== existing2) {
+          toast('Both ports already belong to different harnesses.', 'error')
+        }
+        return
+      }
+      const existingId = existing1 ?? existing2
+      if (existingId) {
+        st.addEndpointToHarness(existingId, existing1 ? ep2 : ep1)
+        select({ type: 'harness', id: existingId })
+        return
+      }
+
+      const id = st.addHarness([ep1, ep2])
       if (id) select({ type: 'harness', id })
     },
-    [addHarness, select]
+    [select]
   )
 
   const onDrop = useCallback(
@@ -212,16 +251,17 @@ export function AssemblyView() {
 
   const onEdgeMouseEnter = useCallback(
     (_: React.MouseEvent, ed: Edge) => {
-      const h = harnesses.find((x) => x.id === ed.id)
-      setHoverHarness(
-        ed.id,
-        h
-          ? [
-              { instanceId: h.a.deviceInstanceId, portId: h.a.portId },
-              { instanceId: h.b.deviceInstanceId, portId: h.b.portId }
-            ]
-          : []
-      )
+      const hid = ed.data?.harnessId as string
+      const h = harnesses.find((x) => x.id === hid)
+      if (h && hid) {
+        setHoverHarness(
+          hid,
+          h.endpoints.map((ep) => ({
+            instanceId: ep.deviceInstanceId,
+            portId: ep.portId
+          }))
+        )
+      }
     },
     [harnesses, setHoverHarness]
   )
@@ -364,8 +404,14 @@ export function AssemblyView() {
         onConnect={onConnect}
         isValidConnection={isValidConnection}
         onNodeClick={(_, n) => select({ type: 'instance', id: n.id })}
-        onEdgeClick={(_, ed) => select({ type: 'harness', id: ed.id })}
-        onEdgeDoubleClick={(_, ed) => openHarnessEditor(ed.id)}
+        onEdgeClick={(_, ed) => {
+          const hid = ed.data?.harnessId as string
+          if (hid) select({ type: 'harness', id: hid })
+        }}
+        onEdgeDoubleClick={(_, ed) => {
+          const hid = ed.data?.harnessId as string
+          if (hid) openHarnessEditor(hid)
+        }}
         onEdgeMouseEnter={onEdgeMouseEnter}
         onEdgeMouseLeave={() => setHoverHarness(null)}
         onPaneClick={() => select(null)}
@@ -380,15 +426,20 @@ export function AssemblyView() {
         }}
         onEdgeContextMenu={(e, ed) => {
           e.preventDefault()
-          select({ type: 'harness', id: ed.id })
-          setMenu({ x: e.clientX, y: e.clientY, kind: 'edge', id: ed.id })
+          const hid = ed.data?.harnessId as string
+          if (hid) { select({ type: 'harness', id: hid }); setMenu({ x: e.clientX, y: e.clientY, kind: 'edge', id: hid }) }
         }}
         onDrop={onDrop}
         onDragOver={(e) => {
           e.preventDefault()
           e.dataTransfer.dropEffect = 'copy'
         }}
-        connectionRadius={30}
+        onConnectStart={(_, { nodeId, handleId }) => {
+          if (nodeId && handleId) setConnectSource({ instanceId: nodeId, portId: handleId })
+        }}
+        onConnectEnd={() => setConnectSource(null)}
+        connectionLineStyle={{ stroke: '#5b9bff', strokeWidth: 2, strokeDasharray: '5 4', opacity: 0.8 }}
+        connectionRadius={50}
         fitView
         deleteKeyCode={['Backspace', 'Delete']}
         proOptions={{ hideAttribution: true }}

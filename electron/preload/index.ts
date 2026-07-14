@@ -5,7 +5,9 @@ const api = {
     load: () => ipcRenderer.invoke('library:load'),
     saveParts: (parts: unknown) => ipcRenderer.invoke('library:saveParts', parts),
     saveTemplates: (templates: unknown) =>
-      ipcRenderer.invoke('library:saveTemplates', templates)
+      ipcRenderer.invoke('library:saveTemplates', templates),
+    export: (data: unknown) => ipcRenderer.invoke('library:export', data),
+    import: () => ipcRenderer.invoke('library:import')
   },
   image: {
     import: (dataUrl: string, thumbDataUrl?: string) =>

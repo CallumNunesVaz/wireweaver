@@ -217,6 +217,28 @@ function registerIpc(): void {
     return true
   })
 
+  ipcMain.handle('library:export', async (_e, data: { parts: unknown; templates: unknown }) => {
+    const res = await dialog.showSaveDialog(mainWindow!, {
+      title: 'Export Library',
+      defaultPath: 'wireweaver-library.wwlib',
+      filters: [{ name: 'WireWeaver Library', extensions: ['wwlib'] }]
+    })
+    if (res.canceled || !res.filePath) return { canceled: true }
+    await writeJsonAtomic(res.filePath, data)
+    return { canceled: false, path: res.filePath }
+  })
+
+  ipcMain.handle('library:import', async () => {
+    const res = await dialog.showOpenDialog(mainWindow!, {
+      title: 'Import Library',
+      properties: ['openFile'],
+      filters: [{ name: 'WireWeaver Library', extensions: ['wwlib'] }]
+    })
+    if (res.canceled || res.filePaths.length === 0) return { canceled: true }
+    const data = await readJson(res.filePaths[0], null)
+    return { canceled: false, path: res.filePaths[0], data }
+  })
+
   // Store an image (and optional pre-rendered thumbnail) by content hash.
   ipcMain.handle(
     'image:import',
