@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(rm -rf ~/.config/wireweaver)",
+      "Bash(timeout 15 ./node_modules/.bin/electron out/main/index.js --no-sandbox --disable-gpu)",
+      "Read(//home/callum/.config/wireweaver/**)",
+      "Read(//home/callum/.config/wireweaver/library/**)",
+      "Bash(WW_DEBUG=1 timeout 15 ./node_modules/.bin/electron out/main/index.js --no-sandbox --disable-gpu)",
+      "Bash(npm test *)",
+      "Bash(echo \"typecheck: $?\")",
+      "Bash(wine --version)",
+      "Bash(timeout 8 curl -sI https://github.com)"
+    ]
+  }
+}

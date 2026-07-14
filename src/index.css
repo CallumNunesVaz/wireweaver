@@ -1,0 +1,74 @@
+@import '@xyflow/react/dist/style.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: #14161b;
+  color: #e7e9ee;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  overflow: hidden;
+  user-select: none;
+}
+
+input,
+textarea,
+select {
+  user-select: text;
+}
+
+/* Thin scrollbars for panes */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #3a3f4b;
+  border-radius: 6px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@layer components {
+  .ww-input {
+    @apply w-full rounded bg-panelalt border border-edge px-2 py-1 text-ink
+      outline-none focus:border-accent placeholder:text-muted;
+  }
+  .ww-label {
+    @apply block text-[11px] uppercase tracking-wide text-muted mb-1;
+  }
+  .ww-btn {
+    @apply inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-ink
+      bg-panelalt border border-edge hover:border-accent hover:bg-edge
+      transition-colors disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  .ww-btn-primary {
+    @apply inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 font-medium
+      bg-accent text-white hover:brightness-110 transition;
+  }
+  .ww-chip {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px]
+      bg-panelalt border border-edge text-muted;
+  }
+}
+
+/* React Flow dark tuning */
+.react-flow {
+  background: #14161b;
+}
+.react-flow__attribution {
+  display: none;
+}

@@ -1,0 +1,63 @@
+appId: com.wireweaver.app
+productName: WireWeaver
+copyright: Copyright © 2024 WireWeaver
+
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - out/**/*
+  - "!out/renderer/**/*.map"
+  - "!node_modules/**/*"
+  - package.json
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.png
+
+nsis:
+  oneClick: true
+  perMachine: false
+  allowToChangeInstallationDirectory: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: WireWeaver
+  installerIcon: build/icon.png
+  uninstallerIcon: build/icon.png
+  installerHeaderIcon: build/icon.png
+
+mac:
+  target:
+    - dmg
+    - zip
+  icon: build/icon.png
+  category: public.app-category.developer-tools
+
+dmg:
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+linux:
+  target:
+    - AppImage
+    - deb
+  icon: build/icon.png
+  category: Development
+
+fileAssociations:
+  - ext: wwv
+    name: WireWeaver Project
+    description: WireWeaver project file
+    role: Editor
+    icon: build/icon.png
+
+extraResources:
+  - from: build/
+    to: build/
+    filter:
+      - "**/*"
+
+publish: null
