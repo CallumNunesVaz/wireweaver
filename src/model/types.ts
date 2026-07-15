@@ -58,6 +58,13 @@ export interface WirePart extends PartBase {
   colorCode?: ColorCode
   shield?: boolean
   category?: WireCategory
+  ulStyle?: string
+  jacketMaterial?: string
+  voltageRating?: string
+  outerDiameterMm?: number
+  operatingTemperature?: string
+  insulatorColor?: string
+  cableStyle?: string
 }
 
 export type Part = DevicePart | ConnectorPart | WirePart
@@ -113,6 +120,8 @@ export interface HarnessWire {
   wirePartId?: string
   color?: string
   twistedWith?: string
+  /** User label; reports fall back to auto-numbering (W1, W2, …) per harness. */
+  label?: string
 }
 
 export interface HarnessSegment {
@@ -128,6 +137,8 @@ export interface Harness {
   endpoints: HarnessEndpoint[]
   wires: HarnessWire[]
   segments: HarnessSegment[]
+  /** Editor canvas positions per endpoint label; grid-derived when absent. */
+  layout?: Record<EndLabel, { x: number; y: number }>
   description?: string
   notes?: string
 }
@@ -139,6 +150,10 @@ export interface Project {
   harnesses: Harness[]
   partSnapshots: Record<string, Part>
   templateSnapshots: Record<string, PinoutTemplate>
+  // Title-block metadata for exported documentation.
+  revision?: string
+  author?: string
+  description?: string
 }
 
 // ---------- Type guards ----------

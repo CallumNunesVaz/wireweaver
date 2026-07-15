@@ -38,6 +38,9 @@ interface ProjectState {
   removeHarness: (id: string) => void
 
   // whole-project
+  setProjectMeta: (
+    patch: Partial<Pick<Project, 'name' | 'revision' | 'author' | 'description'>>
+  ) => void
   loadProject: (project: Project, filePath?: string) => void
   newProject: () => void
   markSaved: (filePath?: string) => void
@@ -76,6 +79,7 @@ function ensureHarness(h: Harness): Harness {
     endpoints: h.endpoints ?? [],
     wires: h.wires ?? [],
     segments: h.segments ?? [],
+    layout: h.layout,
     description: h.description,
     notes: h.notes
   }
@@ -280,6 +284,12 @@ export const useProjectStore = create<ProjectState>()(
           },
           dirty: true
         }))
+      },
+
+      setProjectMeta: (patch) => {
+        coalesceUndo(() =>
+          set((s) => ({ project: { ...s.project, ...patch }, dirty: true }))
+        )
       },
 
       loadProject: (project, filePath) => {

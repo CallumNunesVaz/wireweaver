@@ -14,7 +14,30 @@
       "Bash(wine --version)",
       "Bash(timeout 8 curl -sI https://github.com)",
       "Bash(npx tsc *)",
-      "Bash(npx vitest *)"
+      "Bash(npx vitest *)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:www.nathancheek.com)",
+      "WebFetch(domain:rapidharness.com)",
+      "WebFetch(domain:www.hpacademy.com)",
+      "WebFetch(domain:splice-cad.com)",
+      "WebFetch(domain:harness.design)",
+      "Bash(timeout 12 npx electron out/main/index.js --enable-logging)",
+      "Bash(echo \"boot check done \\(exit $?\\)\")",
+      "Skill(run)",
+      "Bash(mkdir -p /tmp/claude-1000/-home-callum-Documents-wireweaver/42274341-729b-4499-b965-b5d06a13f4f7/scratchpad/uitest/config/WireWeaver/library /tmp/claude-1000/-home-callum-Documents-wireweaver/42274341-729b-4499-b965-b5d06a13f4f7/scratchpad/uitest/shots)",
+      "Bash(node -e \"console.log\\(require\\('playwright-core/package.json'\\).version\\)\")",
+      "Bash(node drive.mjs)",
+      "Bash(node drive-3ep.mjs)",
+      "Bash(node drive-3ep2.mjs)",
+      "Bash(pkill -f \"electron out/main/index.js\")",
+      "Bash(echo \"exit: $?\")",
+      "Bash(sed 's/const page = await app.firstWindow\\(\\)/const page = await app.firstWindow\\(\\)\\\\npage.on\\(\"console\", \\(m\\) => { if \\(m.text\\(\\).includes\\(\"twist\"\\)\\) console.log\\(\"PAGE:\", m.text\\(\\)\\) }\\)/' drive-3ep2.mjs)",
+      "Bash(node drive-debug.mjs)",
+      "Bash(sed -i 's/`, 0.08\\)/`, 0.35\\)/; s/`, 0.92\\)/`, 0.65\\)/' drive-3ep2.mjs)",
+      "Bash(grep -n \"pathPoint\\(\\\\`.react-flow__edge\\\\[data-id=\\\\\"\\\\${wireIds\\\\[\" drive-3ep2.mjs)",
+      "Bash(ps -eo pid,etime,cmd)",
+      "Bash(node close-test.mjs)"
     ]
   }
 }

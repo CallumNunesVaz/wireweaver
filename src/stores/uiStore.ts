@@ -30,6 +30,8 @@ interface UiState {
   templateEditorId: string | null | undefined // undefined = closed, null = new, string = edit
   harnessEditorId: string | null
   libraryManagerOpen: boolean
+  reportsOpen: boolean
+  drcOpen: boolean
 
   setLibrarySearch: (s: string) => void
   toggleLibrary: () => void
@@ -43,6 +45,8 @@ interface UiState {
   openHarnessEditor: (id: string) => void
   closeHarnessEditor: () => void
   toggleLibraryManager: () => void
+  toggleReports: () => void
+  toggleDrc: () => void
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -56,6 +60,8 @@ export const useUiStore = create<UiState>((set) => ({
   templateEditorId: undefined,
   harnessEditorId: null,
   libraryManagerOpen: false,
+  reportsOpen: false,
+  drcOpen: false,
 
   setLibrarySearch: (s) => set({ librarySearch: s }),
   toggleLibrary: () => set((st) => ({ libraryCollapsed: !st.libraryCollapsed })),
@@ -70,5 +76,7 @@ export const useUiStore = create<UiState>((set) => ({
   openHarnessEditor: (harnessEditorId) => set({ harnessEditorId }),
   closeHarnessEditor: () => set({ harnessEditorId: null }),
   toggleLibraryManager: () =>
-    set((st) => ({ libraryManagerOpen: !st.libraryManagerOpen }))
+    set((st) => ({ libraryManagerOpen: !st.libraryManagerOpen })),
+  toggleReports: () => set((st) => ({ reportsOpen: !st.reportsOpen })),
+  toggleDrc: () => set((st) => ({ drcOpen: !st.drcOpen }))
 }))

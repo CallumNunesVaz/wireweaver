@@ -328,6 +328,59 @@ function registerIpc(): void {
     return { canceled: false, path: res.filePath }
   })
 
+  // Generic "save text to a user-chosen file" used by report/CSV/YAML exports.
+  ipcMain.handle(
+    'file:exportText',
+    async (
+      _e,
+      args: { content: string; defaultName: string; filterName: string; extensions: string[] }
+    ) => {
+      const res = await dialog.showSaveDialog(mainWindow!, {
+        title: 'Export',
+        defaultPath: args.defaultName,
+        filters: [{ name: args.filterName, extensions: args.extensions }]
+      })
+      if (res.canceled || !res.filePath) return { canceled: true }
+      const tmp = `${res.filePath}.${process.pid}.tmp`
+      await fs.writeFile(tmp, args.content, 'utf8')
+      await fs.rename(tmp, res.filePath)
+      return { canceled: false, path: res.filePath }
+    }
+  )
+
+  // Render an HTML report to PDF via a hidden window.
+  ipcMain.handle(
+    'report:exportPdf',
+    async (_e, args: { html: string; defaultName: string }) => {
+      const res = await dialog.showSaveDialog(mainWindow!, {
+        title: 'Export PDF Report',
+        defaultPath: args.defaultName,
+        filters: [{ name: 'PDF', extensions: ['pdf'] }]
+      })
+      if (res.canceled || !res.filePath) return { canceled: true }
+
+      const tmpHtml = join(app.getPath('temp'), `wireweaver-report-${process.pid}.html`)
+      await fs.writeFile(tmpHtml, args.html, 'utf8')
+      const win = new BrowserWindow({
+        show: false,
+        webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false }
+      })
+      try {
+        await win.loadFile(tmpHtml)
+        const pdf = await win.webContents.printToPDF({
+          printBackground: true,
+          pageSize: 'A4',
+          margins: { top: 0.4, bottom: 0.4, left: 0.4, right: 0.4 }
+        })
+        await fs.writeFile(res.filePath, pdf)
+      } finally {
+        win.destroy()
+        fs.unlink(tmpHtml).catch(() => {})
+      }
+      return { canceled: false, path: res.filePath }
+    }
+  )
+
   ipcMain.handle('recent:get', async () => {
     return readJson<RecentEntry[]>(recentFile(), [])
   })

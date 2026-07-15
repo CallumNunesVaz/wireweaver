@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useStore } from 'zustand'
 import { ReactFlowProvider } from '@xyflow/react'
 import {
@@ -12,6 +12,8 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   FileDown,
+  FileText,
+  ShieldCheck,
   Clock,
   BookOpen
 } from 'lucide-react'
@@ -24,6 +26,7 @@ import { useLibraryStore, selectLibraryLike } from '../stores/libraryStore'
 import { useProjectStore } from '../stores/projectStore'
 import { useUiStore } from '../stores/uiStore'
 import { exportBomCsv } from '../model/bom'
+import { runDrc } from '../model/drc'
 import { withSnapshots, missingFromLibrary } from '../model/snapshot'
 import type { Project } from '../model/types'
 
@@ -41,6 +44,12 @@ const HarnessEditor = lazy(() =>
 )
 const LibraryManager = lazy(() =>
   import('../library/LibraryManager').then((m) => ({ default: m.LibraryManager }))
+)
+const ReportsModal = lazy(() =>
+  import('../reports/ReportsModal').then((m) => ({ default: m.ReportsModal }))
+)
+const DrcPanel = lazy(() =>
+  import('../reports/DrcPanel').then((m) => ({ default: m.DrcPanel }))
 )
 
 function errMessage(err: unknown): string {
@@ -71,6 +80,24 @@ export default function App() {
   const harnessEditorId = useUiStore((s) => s.harnessEditorId)
   const libraryManagerOpen = useUiStore((s) => s.libraryManagerOpen)
   const toggleLibraryManager = useUiStore((s) => s.toggleLibraryManager)
+  const reportsOpen = useUiStore((s) => s.reportsOpen)
+  const toggleReports = useUiStore((s) => s.toggleReports)
+  const drcOpen = useUiStore((s) => s.drcOpen)
+  const toggleDrc = useUiStore((s) => s.toggleDrc)
+
+  // Live DRC badge: recompute on any project/library change.
+  const libParts = useLibraryStore((s) => s.parts)
+  const libTemplates = useLibraryStore((s) => s.templates)
+  const drcSummary = useMemo(() => {
+    const issues = runDrc(
+      selectLibraryLike({ parts: libParts, templates: libTemplates }),
+      project
+    )
+    return {
+      total: issues.length,
+      errors: issues.filter((i) => i.severity === 'error').length
+    }
+  }, [libParts, libTemplates, project])
 
   const [recentProjects, setRecentProjects] = useState<
     { name: string; path: string; openedAt: number }[]
@@ -280,6 +307,27 @@ export default function App() {
             >
               <Redo2 size={16} />
             </button>
+            <button
+              className="ww-btn relative"
+              onClick={toggleDrc}
+              title="Design rule check"
+            >
+              <ShieldCheck size={16} /> DRC
+              {drcSummary.total > 0 && (
+                <span
+                  className={`ml-1 rounded-full px-1.5 text-[10px] font-semibold ${
+                    drcSummary.errors > 0
+                      ? 'bg-red-500/20 text-red-400'
+                      : 'bg-amber-500/20 text-amber-400'
+                  }`}
+                >
+                  {drcSummary.total}
+                </span>
+              )}
+            </button>
+            <button className="ww-btn" onClick={toggleReports} title="Reports & exports">
+              <FileText size={16} /> Reports
+            </button>
             <button className="ww-btn" onClick={handleBom} title="Export BOM (CSV)">
               <FileDown size={16} /> BOM
             </button>
@@ -371,6 +419,16 @@ export default function App() {
         {libraryManagerOpen && (
           <ErrorBoundary>
             <LibraryManager />
+          </ErrorBoundary>
+        )}
+        {reportsOpen && (
+          <ErrorBoundary>
+            <ReportsModal />
+          </ErrorBoundary>
+        )}
+        {drcOpen && (
+          <ErrorBoundary>
+            <DrcPanel />
           </ErrorBoundary>
         )}
       </Suspense>

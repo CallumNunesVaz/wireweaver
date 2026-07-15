@@ -14,7 +14,9 @@ import {
   X,
   Pencil,
   Trash2,
-  Copy
+  Copy,
+  Filter,
+  RotateCcw
 } from 'lucide-react'
 import { nanoid } from 'nanoid'
 import { useLibraryStore } from '../stores/libraryStore'
@@ -25,7 +27,7 @@ import { toast } from '../shared/toast'
 import { imageUrl, fileToDataUrl, makeThumbDataUrl } from '../shared/useImage'
 import { CURRENCIES } from '../model/currency'
 import { ContextMenu } from '../shared/ContextMenu'
-import type { Part, PartKind, PartType, PinoutTemplate, HarnessEndpoint } from '../model/types'
+import type { Part, PartKind, PartType, PinoutTemplate, HarnessEndpoint, WirePart } from '../model/types'
 import { isDevice, isConnector, isWire, endIndex } from '../model/types'
 
 // Reuse shared form fields from PartEditor
@@ -69,6 +71,8 @@ export function LibraryManager() {
     template: true,
     harness: true
   })
+  const [wireFilters, setWireFilters] = useState<Record<string, string>>({})
+  const [showWireFilters, setShowWireFilters] = useState(false)
   const [showSelect, setShowSelect] = useState(false)
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const [menu, setMenu] = useState<{ x: number; y: number; selection: LibraryItem } | null>(null)
@@ -88,7 +92,49 @@ export function LibraryManager() {
 
   const devices = filteredParts.filter(isDevice)
   const connectors = filteredParts.filter(isConnector)
-  const wires = filteredParts.filter(isWire)
+
+  const wireFilterOptions = useMemo(() => {
+    const allWires = parts.filter(isWire)
+    const distinct = (extract: (w: WirePart) => string | number | boolean | undefined): string[] => {
+      const vals = new Set<string>()
+      for (const w of allWires) {
+        const v = extract(w)
+        if (v != null && v !== '') vals.add(String(v))
+      }
+      return [...vals].sort()
+    }
+    return {
+      gauge: distinct((w) => w.gauge),
+      conductors: distinct((w) => w.conductors),
+      ulStyle: distinct((w) => w.ulStyle),
+      jacketMaterial: distinct((w) => w.jacketMaterial),
+      voltageRating: distinct((w) => w.voltageRating),
+      outerDiameterMm: distinct((w) => w.outerDiameterMm),
+      operatingTemperature: distinct((w) => w.operatingTemperature),
+      color: distinct((w) => w.color),
+      insulatorColor: distinct((w) => w.insulatorColor),
+      cableStyle: distinct((w) => w.cableStyle),
+      shield: distinct((w) => (w.shield != null ? String(w.shield) : '')),
+      colorCode: distinct((w) => w.colorCode),
+      category: distinct((w) => w.category)
+    }
+  }, [parts])
+
+  const wires = useMemo(() => {
+    let result = filteredParts.filter(isWire)
+    for (const [key, value] of Object.entries(wireFilters)) {
+      if (!value) continue
+      result = result.filter((w) => {
+        const v = (w as Record<string, unknown>)[key]
+        if (key === 'shield') {
+          return String(!!v) === value
+        }
+        if (value === '__none__') return v == null || v === ''
+        return String(v ?? '') === value
+      })
+    }
+    return result
+  }, [filteredParts, wireFilters])
 
   // Filter templates
   const filteredTemplates = useMemo(
@@ -306,6 +352,29 @@ export function LibraryManager() {
               />
             </div>
           </div>
+
+          {filters.wire && (
+            <div className="border-b border-edge px-2 py-1">
+              <button
+                type="button"
+                className={`rounded px-2 py-0.5 text-[11px] transition-colors flex items-center gap-1 w-full ${
+                  showWireFilters ? 'bg-accent text-white' : 'bg-panelalt text-muted hover:text-ink'
+                }`}
+                onClick={(e) => { e.preventDefault(); setShowWireFilters(!showWireFilters) }}
+              >
+                <Filter size={11} /> Filters{Object.values(wireFilters).filter(Boolean).length > 0 ? ` (${Object.values(wireFilters).filter(Boolean).length})` : ''}
+              </button>
+              {showWireFilters && (
+                <div className="mt-1">
+                  <WireFilterBar
+                    options={wireFilterOptions}
+                    filters={wireFilters}
+                    setFilters={setWireFilters}
+                  />
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="min-h-0 flex-1 overflow-y-auto">
             {sections.map(({ key, label, icon: Icon, items, filterKey }) => {
@@ -730,8 +799,8 @@ function UsagePanel({ draft }: { draft: Part | null }) {
     return (
       <div className="mt-3 text-[11px] text-muted border-t border-edge pt-3">
         Not used in the current project.
-      </div>
-    )
+    </div>
+  )
   }
 
   return (
@@ -741,6 +810,77 @@ function UsagePanel({ draft }: { draft: Part | null }) {
         {refs.map((r, i) => (
           <div key={i} className="text-[11px] text-muted">{r}</div>
         ))}
+      </div>
+    </div>
+  )
+}
+
+const WIRE_FILTER_FIELDS: { key: string; label: string }[] = [
+  { key: 'gauge', label: 'AWG' },
+  { key: 'conductors', label: '# Conductors' },
+  { key: 'ulStyle', label: 'UL Style' },
+  { key: 'jacketMaterial', label: 'Jacket' },
+  { key: 'voltageRating', label: 'Voltage' },
+  { key: 'outerDiameterMm', label: 'OD (mm)' },
+  { key: 'operatingTemperature', label: 'Temp.' },
+  { key: 'color', label: 'Color' },
+  { key: 'insulatorColor', label: 'Ins. Color' },
+  { key: 'cableStyle', label: 'Cable Style' },
+  { key: 'shield', label: 'Shield' },
+  { key: 'colorCode', label: 'Color Code' },
+  { key: 'category', label: 'Category' }
+]
+
+function WireFilterBar({
+  options,
+  filters,
+  setFilters
+}: {
+  options: Record<string, string[]>
+  filters: Record<string, string>
+  setFilters: (f: Record<string, string>) => void
+}) {
+  const activeCount = Object.values(filters).filter(Boolean).length
+  const hasFilterOptions = Object.keys(options).some((k) => options[k]?.length > 0)
+
+  if (!hasFilterOptions) {
+    return <span className="text-[11px] text-muted">No wire properties to filter on.</span>
+  }
+
+  return (
+    <div className="space-y-1">
+      {activeCount > 0 && (
+        <button
+          type="button"
+          className="rounded px-1.5 py-0.5 text-[10px] bg-panelalt text-muted hover:text-ink flex items-center gap-1"
+          onClick={() => setFilters({})}
+        >
+          <RotateCcw size={11} /> Clear
+        </button>
+      )}
+      <div className="grid grid-cols-2 gap-1">
+        {WIRE_FILTER_FIELDS.map(({ key, label }) => {
+          const values = options[key]
+          if (!values || values.length <= 1) return null
+          return (
+            <select
+              key={key}
+              className="ww-input h-6 text-[10px] py-0 w-full"
+              value={filters[key] ?? ''}
+              onChange={(e) =>
+                setFilters({ ...filters, [key]: e.target.value })
+              }
+              title={label}
+            >
+              <option value="">{label}</option>
+              {values.map((v) => (
+                <option key={v} value={v}>
+                  {key === 'shield' ? (v === 'true' ? 'Shielded' : 'Unshielded') : v}
+                </option>
+              ))}
+            </select>
+          )
+        })}
       </div>
     </div>
   )
@@ -865,8 +1005,8 @@ function HarnessInfoCard({
               <div className="text-xs text-muted">{ep.portName}</div>
               <div className="text-[10px] text-muted mt-1">Connector: {ep.connectorName}</div>
             </div>
-          ))}
-        </div>
+        ))}
+      </div>
 
         {harness.segments.length > 0 && (
           <div className="rounded border border-edge bg-panelalt p-3">

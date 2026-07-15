@@ -67,7 +67,7 @@ export interface HarnessValidation {
 }
 
 /** Resolve all endpoints of a harness, keyed by their label. */
-function resolveAllEndpoints(
+export function resolveAllEndpoints(
   lib: LibraryLike,
   instances: DeviceInstance[],
   harness: Harness
@@ -194,7 +194,15 @@ export function pruneInstanceFromHarness(
   const segments = harness.segments
     .filter((s) => remap.has(s.fromEnd) && remap.has(s.toEnd))
     .map((s) => ({ ...s, fromEnd: remap.get(s.fromEnd)!, toEnd: remap.get(s.toEnd)! }))
-  return { ...harness, endpoints, wires, segments }
+  let layout: Harness['layout']
+  if (harness.layout) {
+    layout = {}
+    for (const [label, pos] of Object.entries(harness.layout)) {
+      const next = remap.get(label)
+      if (next) layout[next] = pos
+    }
+  }
+  return { ...harness, endpoints, wires, segments, layout }
 }
 
 /** Suggest a harness name from multiple device instance labels. */

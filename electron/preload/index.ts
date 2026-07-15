@@ -25,6 +25,18 @@ const api = {
     export: (csv: string, defaultName: string) =>
       ipcRenderer.invoke('bom:export', csv, defaultName)
   },
+  file: {
+    exportText: (args: {
+      content: string
+      defaultName: string
+      filterName: string
+      extensions: string[]
+    }) => ipcRenderer.invoke('file:exportText', args)
+  },
+  report: {
+    exportPdf: (html: string, defaultName: string) =>
+      ipcRenderer.invoke('report:exportPdf', { html, defaultName })
+  },
   recent: {
     get: () => ipcRenderer.invoke('recent:get'),
     add: (entry: { name: string; path: string }) =>

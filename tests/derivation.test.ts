@@ -179,6 +179,16 @@ describe('pruneInstanceFromHarness', () => {
     const twoWay: Harness = { ...threeWay, endpoints: threeWay.endpoints.slice(0, 2) }
     expect(pruneInstanceFromHarness(twoWay, 'i1')).toBeNull()
   })
+
+  it('remaps editor layout positions to the shifted labels', () => {
+    const withLayout: Harness = {
+      ...threeWay,
+      layout: { a: { x: 0, y: 0 }, b: { x: 100, y: 0 }, c: { x: 0, y: 300 } }
+    }
+    const pruned = pruneInstanceFromHarness(withLayout, 'i1')!
+    // old b→a, old c→b; old a's position is dropped with its endpoint.
+    expect(pruned.layout).toEqual({ a: { x: 100, y: 0 }, b: { x: 0, y: 300 } })
+  })
 })
 
 describe('sanitizeTwists', () => {

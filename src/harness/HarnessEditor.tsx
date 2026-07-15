@@ -6,10 +6,12 @@ import {
   Background,
   BackgroundVariant,
   Controls,
+  useNodesState,
   type Node,
   type Edge,
   type Connection,
   type EdgeChange,
+  type NodeChange,
   type NodeTypes
 } from '@xyflow/react'
 import {
@@ -53,6 +55,7 @@ function parseHandle(h: string | null | undefined): { end: string; position: num
 }
 
 const COLUMN_SPACING = 420
+const ROW_SPACING = 340
 
 export function HarnessEditor({ harnessId }: { harnessId: string }) {
   const close = useUiStore((s) => s.closeHarnessEditor)
@@ -113,6 +116,23 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
     [harness, lib, instances]
   )
 
+  // Segments to offer length inputs for: every endpoint pair that is actually
+  // wired (star wiring makes non-adjacent pairs like a–c normal), plus pairs
+  // that already have a segment, plus adjacent pairs as a starting default.
+  const segmentPairs = useMemo(() => {
+    const pairs = new Set<string>()
+    for (let i = 0; i < numEndpoints - 1; i++) {
+      pairs.add(`${endLabel(i)}~${endLabel(i + 1)}`)
+    }
+    for (const w of harness?.wires ?? []) {
+      if (w.from.end !== w.to.end) pairs.add([w.from.end, w.to.end].sort().join('~'))
+    }
+    for (const s of harness?.segments ?? []) {
+      pairs.add([s.fromEnd, s.toEnd].sort().join('~'))
+    }
+    return [...pairs].sort().map((k) => k.split('~') as [string, string])
+  }, [harness?.wires, harness?.segments, numEndpoints])
+
   const wiredPositions = useMemo(() => {
     const all: Record<string, Set<number>> = {}
     for (let i = 0; i < numEndpoints; i++) {
@@ -139,18 +159,23 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
   // All wires — no filtering by endpoint pair
   const allWires = harness?.wires ?? []
 
-  // Build a node for each endpoint, laid out horizontally in columns
+  // Build a node for each endpoint. Default placement is a grid (so wires
+  // between non-adjacent endpoints don't all overlap on one line); users can
+  // drag columns and positions persist on the harness.
   const nodes: Node[] = useMemo(() => {
     if (!harness || numEndpoints === 0) return []
+    const cols = Math.max(1, Math.ceil(Math.sqrt(numEndpoints)))
     return endpoints.map((_, i) => {
       const label = endLabel(i)
       const re = resolvedEndpoints[i]
-      const x = i * COLUMN_SPACING
+      const position = harness.layout?.[label] ?? {
+        x: (i % cols) * COLUMN_SPACING,
+        y: Math.floor(i / cols) * ROW_SPACING
+      }
       return {
         id: `end-${label}`,
         type: 'pincol',
-        position: { x, y: 0 },
-        draggable: false,
+        position,
         data: {
           end: label,
           title: re ? `${re.instance.label} · ${re.port.name}` : `End ${label.toUpperCase()}`,
@@ -164,14 +189,52 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
     })
   }, [harness, numEndpoints, endpoints, resolvedEndpoints, wiredPositions, pinColors, hideUnused])
 
+  // React Flow drives column motion locally; structure resyncs from the store.
+  const [flowNodes, setFlowNodes, onNodesChangeRaw] = useNodesState<Node>([])
+  useEffect(() => {
+    setFlowNodes(nodes)
+  }, [nodes, setFlowNodes])
+
+  const onNodesChange = useCallback(
+    (changes: NodeChange[]) => {
+      onNodesChangeRaw(changes)
+      for (const c of changes) {
+        if (c.type === 'position' && c.dragging === false && c.position) {
+          const label = c.id.replace(/^end-/, '')
+          const current = useProjectStore.getState().project.harnesses.find((h) => h.id === harnessId)
+          updateHarness(harnessId, {
+            layout: { ...(current?.layout ?? {}), [label]: c.position }
+          })
+        }
+      }
+    },
+    [onNodesChangeRaw, harnessId, updateHarness]
+  )
+
   // Edges for ALL wires between any endpoints
   const edges: Edge[] = useMemo(() => {
     if (!harness) return []
     const sel = new Set(selectedWireIds)
+    const byId = new Map(allWires.map((w) => [w.id, w]))
     return allWires.map((w) => {
       const unassigned = !w.wirePartId
-      const isTwisted = !!w.twistedWith
       const isSelected = sel.has(w.id)
+      // A mutual twisted pair renders as a helix: each strand needs its
+      // mate's handle ids to compute the shared centerline.
+      const mate = w.twistedWith ? byId.get(w.twistedWith) : undefined
+      const isTwisted = !!mate && mate.twistedWith === w.id
+      let twistData: Record<string, unknown> | undefined
+      if (isTwisted && mate) {
+        const aligned = mate.from.end === w.from.end
+        const mFrom = aligned ? mate.from : mate.to
+        const mTo = aligned ? mate.to : mate.from
+        twistData = {
+          mateSourceHandle: `${mFrom.end}:${mFrom.position}`,
+          mateTargetHandle: `${mTo.end}:${mTo.position}`,
+          // Opposite phases interleave the two strands into one helix.
+          phase: w.id < mate.id ? 0 : Math.PI
+        }
+      }
       return {
         id: w.id,
         source: `end-${w.from.end}`,
@@ -180,6 +243,7 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
         targetHandle: `${w.to.end}:${w.to.position}-tgt`,
         selected: isSelected,
         type: isTwisted ? 'twisted' : undefined,
+        data: twistData,
         style: {
           stroke: w.color ?? (unassigned ? '#c48a2f' : '#5b9bff'),
           strokeWidth: isSelected ? 3 : 2,
@@ -398,7 +462,12 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
   const selectedWires = selectedWireIds.map((id) => harness.wires.find((w) => w.id === id)).filter(Boolean) as HarnessWire[]
   const singleWire = selectedWires.length === 1 ? selectedWires[0] : null
   const isTwisted = !!singleWire?.twistedWith
-  const canTwist = selectedWires.length === 2
+  // Twisting only makes sense for wires that run together — same endpoint
+  // pair (a twisted pair diverging to different endpoints is physically
+  // meaningless, and the helix rendering needs a shared centerline).
+  const pairKey = (w: HarnessWire) => [w.from.end, w.to.end].sort().join('~')
+  const canTwist =
+    selectedWires.length === 2 && pairKey(selectedWires[0]) === pairKey(selectedWires[1])
   const areAlreadyTwisted = selectedWires.length === 2
     && selectedWires[0].twistedWith === selectedWires[1].id
     && selectedWires[1].twistedWith === selectedWires[0].id
@@ -418,10 +487,8 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
         </span>
 
         <div className="flex items-center gap-1 ml-2">
-          {/* Segment lengths — editable inline */}
-          {numEndpoints >= 2 && Array.from({ length: numEndpoints - 1 }, (_, i) => {
-            const al = endLabel(i)
-            const bl = endLabel(i + 1)
+          {/* Segment lengths — editable inline, one chip per wired pair */}
+          {numEndpoints >= 2 && segmentPairs.map(([al, bl]) => {
             const seg = harness.segments.find(
               (s) => (s.fromEnd === al && s.toEnd === bl) || (s.fromEnd === bl && s.toEnd === al)
             )
@@ -532,7 +599,8 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
           }}
         >
           <ReactFlowProvider>
-            <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
+            <ReactFlow nodes={flowNodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
+              onNodesChange={onNodesChange}
               onConnect={onConnect} onEdgesChange={onEdgesChange}
               isValidConnection={isValidConnection}
               onEdgeClick={onEdgeClick}
@@ -608,8 +676,13 @@ function WireEditPopup({ selectedWires, wireParts, pos, canTwist, areAlreadyTwis
   const [open, setOpen] = useState(false)
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      // Clicking another wire ADDS it to the selection (twisted pairs need two
+      // wires selected) — closing here would wipe the selection before the
+      // edge's own click handler runs.
+      if (target.closest?.('.react-flow__edge')) return
       const el = document.getElementById('ww-wire-popup')
-      if (el && !el.contains(e.target as HTMLElement)) onClose()
+      if (el && !el.contains(target)) onClose()
     }
     const t = setTimeout(() => document.addEventListener('mousedown', onDown), 100)
     return () => { clearTimeout(t); document.removeEventListener('mousedown', onDown) }
@@ -685,6 +758,20 @@ function WireEditPopup({ selectedWires, wireParts, pos, canTwist, areAlreadyTwis
         <div>
           <label className="ww-label">Colour</label>
           <input type="color" className="h-7 w-10 rounded border border-edge bg-panelalt cursor-pointer" value={wire.color ?? '#5b9bff'} onChange={(e) => onUpdate({ color: e.target.value })} />
+        </div>
+        <div>
+          <label className="ww-label">Label</label>
+          <input
+            className="ww-input w-full"
+            value={wire.label ?? ''}
+            placeholder="auto (W1, W2, …)"
+            onChange={(e) => onUpdate({ label: e.target.value || undefined })}
+            onKeyDown={(e) => {
+              // Keep Enter/Escape inside the input — the editor's own handlers
+              // would close the popup or the whole overlay.
+              if (e.key === 'Enter' || e.key === 'Escape') e.stopPropagation()
+            }}
+          />
         </div>
         {isTwisted && <div className="flex items-center gap-1.5 text-[10px] text-accent"><Link2 size={12} /> Twisted pair — select both wires to untwist</div>}
       </div>

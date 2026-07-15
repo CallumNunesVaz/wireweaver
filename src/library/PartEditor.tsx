@@ -396,6 +396,90 @@ export function WireFields({
           onChange={(e) => patch({ conductors: Number(e.target.value) })}
         />
       </Field>
+      <Field label="UL Style">
+        <input
+          className="ww-input"
+          placeholder="2464"
+          value={part.ulStyle ?? ''}
+          onChange={(e) => patch({ ulStyle: e.target.value })}
+        />
+      </Field>
+      <Field label="Jacket Material">
+        <input
+          className="ww-input"
+          placeholder="PVC"
+          value={part.jacketMaterial ?? ''}
+          onChange={(e) => patch({ jacketMaterial: e.target.value })}
+        />
+      </Field>
+      <Field label="Voltage Rating">
+        <input
+          className="ww-input"
+          placeholder="300 V"
+          value={part.voltageRating ?? ''}
+          onChange={(e) => patch({ voltageRating: e.target.value })}
+        />
+      </Field>
+      <Field label="Outer Diameter (mm)">
+        <input
+          type="number"
+          min={0}
+          step={0.1}
+          className="ww-input"
+          placeholder="3.5"
+          value={part.outerDiameterMm ?? ''}
+          onChange={(e) => patch({ outerDiameterMm: e.target.value ? Number(e.target.value) : undefined })}
+        />
+      </Field>
+      <Field label="Operating Temp.">
+        <input
+          className="ww-input"
+          placeholder="-25 ~ 80 °C"
+          value={part.operatingTemperature ?? ''}
+          onChange={(e) => patch({ operatingTemperature: e.target.value })}
+        />
+      </Field>
+      <Field label="Insulator Colour">
+        <input
+          className="ww-input"
+          placeholder="white + black"
+          value={part.insulatorColor ?? ''}
+          onChange={(e) => patch({ insulatorColor: e.target.value })}
+        />
+      </Field>
+      <Field label="Cable Style">
+        <select
+          className="ww-input"
+          value={part.cableStyle ?? ''}
+          onChange={(e) => patch({ cableStyle: e.target.value || undefined })}
+        >
+          <option value="">—</option>
+          <option value="round">Round</option>
+          <option value="flat">Flat</option>
+        </select>
+      </Field>
+      <Field label="Shield">
+        <div className="flex items-center gap-2 pt-1">
+          <input
+            type="checkbox"
+            className="accent-accent"
+            checked={part.shield ?? false}
+            onChange={(e) => patch({ shield: e.target.checked })}
+          />
+          <span className="text-xs">Shielded</span>
+        </div>
+      </Field>
+      <Field label="Category">
+        <select
+          className="ww-input"
+          value={part.category ?? ''}
+          onChange={(e) => patch({ category: (e.target.value || undefined) as WirePart['category'] })}
+        >
+          <option value="">—</option>
+          <option value="cable">Single wire</option>
+          <option value="bundle">Bundle</option>
+        </select>
+      </Field>
     </div>
   )
 }

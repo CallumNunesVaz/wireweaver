@@ -65,6 +65,20 @@ interface WwApi {
       defaultName: string
     ) => Promise<{ canceled: boolean; path?: string }>
   }
+  file: {
+    exportText: (args: {
+      content: string
+      defaultName: string
+      filterName: string
+      extensions: string[]
+    }) => Promise<{ canceled: boolean; path?: string }>
+  }
+  report: {
+    exportPdf: (
+      html: string,
+      defaultName: string
+    ) => Promise<{ canceled: boolean; path?: string }>
+  }
   recent: {
     get: () => Promise<RecentEntry[]>
     add: (entry: { name: string; path: string }) => Promise<RecentEntry[]>
