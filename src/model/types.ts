@@ -48,6 +48,7 @@ export interface ConnectorPart extends PartBase {
   kind: 'connector'
   positions: number
   gender?: ConnectorGender
+  matingConnectorPartId?: string
 }
 
 export interface WirePart extends PartBase {

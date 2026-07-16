@@ -180,6 +180,7 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
           end: label,
           title: re ? `${re.instance.label} · ${re.port.name}` : `End ${label.toUpperCase()}`,
           connectorName: re?.connector?.name ?? 'no connector',
+          matingConnectorName: re?.matingConnector?.name,
           pins: re?.pins ?? [],
           wiredPositions: [...(wiredPositions[label] ?? [])],
           hideUnused,

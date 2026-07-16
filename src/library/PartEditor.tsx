@@ -16,6 +16,7 @@ import type {
   PortSide,
   WirePart
 } from '../model/types'
+import { isConnector } from '../model/types'
 
 const PART_TYPES: PartType[] = ['COTS', 'MOTS', 'Custom']
 const SIDES: PortSide[] = ['left', 'right', 'top', 'bottom']
@@ -45,6 +46,10 @@ export function PartEditor() {
     target.partId ? s.parts.find((p) => p.id === target.partId) : undefined
   )
   const templates = useLibraryStore((s) => s.templates)
+  const connectors = useMemo(
+    () => useLibraryStore.getState().parts.filter(isConnector).map((c) => ({ id: c.id, name: c.name })),
+    []
+  )
 
   const [draft, setDraft] = useState<Part>(
     () => (existing ? structuredClone(existing) : blankPart(target.kind))
@@ -246,6 +251,7 @@ export function PartEditor() {
           <ConnectorFields
             part={draft as ConnectorPart}
             patch={patch as (p: Partial<ConnectorPart>) => void}
+            connectors={connectors}
           />
         )}
         {draft.kind === 'wire' && (
@@ -328,10 +334,12 @@ export function LinkedField({
 
 export function ConnectorFields({
   part,
-  patch
+  patch,
+  connectors
 }: {
   part: ConnectorPart
   patch: (p: Partial<ConnectorPart>) => void
+  connectors?: { id: string; name: string }[]
 }) {
   return (
     <div className="grid grid-cols-2 gap-3">
@@ -358,6 +366,26 @@ export function ConnectorFields({
           <option value="hermaphroditic">Hermaphroditic</option>
         </select>
       </Field>
+      {connectors && connectors.length > 0 && (
+        <Field label="Mating Connector" span2>
+          <select
+            className="ww-input"
+            value={part.matingConnectorPartId ?? ''}
+            onChange={(e) =>
+              patch({ matingConnectorPartId: e.target.value || undefined })
+            }
+          >
+            <option value="">— none —</option>
+            {connectors
+              .filter((c) => c.id !== part.id)
+              .map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+          </select>
+        </Field>
+      )}
     </div>
   )
 }

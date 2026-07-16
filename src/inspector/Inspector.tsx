@@ -154,6 +154,7 @@ function HarnessInspector({ id }: { id: string }) {
                 label={`End ${String.fromCharCode(65 + i)}`}
                 title={re ? `${re.instance.label} · ${re.port.name}` : 'unresolved'}
                 connector={re?.connector?.name}
+                matingConnector={re?.matingConnector?.name}
               />
             ))}
           </div>
@@ -217,11 +218,13 @@ function HarnessInspector({ id }: { id: string }) {
 function EndpointCard({
   label,
   title,
-  connector
+  connector,
+  matingConnector
 }: {
   label: string
   title: string
   connector?: string
+  matingConnector?: string
 }) {
   return (
     <div className="rounded border border-edge bg-panelalt px-2 py-1.5">
@@ -229,6 +232,9 @@ function EndpointCard({
       <div className="truncate text-xs font-medium">{title}</div>
       <div className="truncate text-[11px] text-muted">
         {connector ? `Connector: ${connector}` : 'No connector (template incomplete)'}
+        {matingConnector && connector && (
+          <span className="ml-1">← {matingConnector}</span>
+        )}
       </div>
     </div>
   )

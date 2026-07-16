@@ -760,7 +760,7 @@ function PartDetail({
         </div>
 
         <div className="mt-4 border-t border-edge pt-4">
-          {draft.kind === 'connector' && <ConnectorFields part={draft as import('../model/types').ConnectorPart} patch={patch as (p: Partial<import('../model/types').ConnectorPart>) => void} />}
+          {draft.kind === 'connector' && <ConnectorFields part={draft as import('../model/types').ConnectorPart} patch={patch as (p: Partial<import('../model/types').ConnectorPart>) => void} connectors={connectors.map((c) => ({ id: c.id, name: c.name }))} />}
           {draft.kind === 'wire' && <WireFields part={draft as import('../model/types').WirePart} patch={patch as (p: Partial<import('../model/types').WirePart>) => void} />}
           {draft.kind === 'device' && (
             <PortEditor

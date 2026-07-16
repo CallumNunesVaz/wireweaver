@@ -7,6 +7,7 @@ export type PinColumnData = {
   end: string
   title: string
   connectorName: string
+  matingConnectorName?: string
   pins: PinDef[]
   wiredPositions: number[]
   hideUnused?: boolean
@@ -31,6 +32,9 @@ function PinColumnNodeImpl({ data }: NodeProps) {
         <div className="text-xs font-semibold">{d.title}</div>
         <div className="text-[10px] text-muted">
           {d.connectorName}
+          {d.matingConnectorName && (
+            <span> ← {d.matingConnectorName}</span>
+          )}
           <span className="ml-1">
             {totalWired}/{totalPins} wired
           </span>

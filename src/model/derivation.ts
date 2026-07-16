@@ -24,6 +24,7 @@ export interface ResolvedEndpoint {
   port: DevicePort
   template?: PinoutTemplate
   connector?: ConnectorPart
+  matingConnector?: ConnectorPart
   pins: PinDef[]
 }
 
@@ -46,12 +47,18 @@ export function resolveEndpoint(
   const connectorPart = template ? lib.parts[template.connectorPartId] : undefined
   const connector =
     connectorPart && isConnector(connectorPart) ? connectorPart : undefined
+  const matingConnectorPart = connector?.matingConnectorPartId
+    ? lib.parts[connector.matingConnectorPartId]
+    : undefined
+  const matingConnector =
+    matingConnectorPart && isConnector(matingConnectorPart) ? matingConnectorPart : undefined
   return {
     instance,
     device,
     port,
     template,
     connector,
+    matingConnector,
     pins: template ? [...template.pins].sort((a, b) => a.position - b.position) : []
   }
 }
