@@ -1,5 +1,5 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, protocol } from 'electron'
-import { join, extname, relative, isAbsolute } from 'node:path'
+import { join, extname, relative, isAbsolute, dirname } from 'node:path'
 import { promises as fs } from 'node:fs'
 import { createHash } from 'node:crypto'
 
@@ -20,9 +20,36 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 // ---------- Storage paths ----------
-function libraryDir(): string {
-  return join(app.getPath('userData'), 'library')
+
+const DEFAULT_LIBRARY_DIR = join(app.getPath('userData'), 'library')
+
+function settingsFile(): string {
+  return join(app.getPath('userData'), 'settings.json')
 }
+
+interface AppSettings {
+  libraryPath?: string
+}
+
+let _settings: AppSettings | undefined
+let _cachedLibDir: string | undefined
+
+function libraryDir(): string {
+  return _cachedLibDir ?? DEFAULT_LIBRARY_DIR
+}
+
+async function initSettings(): Promise<void> {
+  _settings = await readJson<AppSettings>(settingsFile(), {})
+  _cachedLibDir = _settings.libraryPath ?? DEFAULT_LIBRARY_DIR
+}
+
+async function persistLibraryPath(path: string): Promise<void> {
+  const settings = { ...(_settings ?? {}), libraryPath: path }
+  await writeJsonAtomic(settingsFile(), settings)
+  _settings = settings
+  _cachedLibDir = path
+}
+
 function imagesDir(): string {
   return join(libraryDir(), 'images')
 }
@@ -191,7 +218,9 @@ function createWindow(): void {
 }
 
 // ---------- IPC ----------
-function registerIpc(): void {
+async function registerIpc(): Promise<void> {
+  await initSettings()
+
   ipcMain.handle('library:load', async () => {
     await ensureDirs()
     let isNew = false
@@ -381,11 +410,50 @@ function registerIpc(): void {
     }
   )
 
+  ipcMain.handle('library:choosePath', async () => {
+    const win = BrowserWindow.getFocusedWindow()
+    if (!win) return null
+    const res = await dialog.showOpenDialog(win, {
+      title: 'Choose library database folder',
+      properties: ['openDirectory', 'createDirectory']
+    })
+    if (res.canceled || res.filePaths.length === 0) return null
+    return res.filePaths[0]
+  })
+
   ipcMain.handle('recent:get', async () => {
     return readJson<RecentEntry[]>(recentFile(), [])
   })
 
+  ipcMain.handle('part-lookup:search', async (_e, query: string) => {
+    const parts: unknown[] = await readJson(partsFile(), [])
+    const q = query.toLowerCase().trim()
+    if (!q) return []
+    const results = (parts as any[]).filter((p: any) => {
+      const fields = [
+        p.name,
+        p.internalPartNumber,
+        p.manufacturer,
+        p.manufacturerPartNumber,
+        p.supplierPartNumber,
+        p.notes
+      ]
+      return fields.some((f) => typeof f === 'string' && f.toLowerCase().includes(q))
+    })
+    return results.slice(0, 20).map((p: any) => ({
+      id: p.id,
+      kind: p.kind,
+      name: p.name,
+      internalPartNumber: p.internalPartNumber,
+      manufacturer: p.manufacturer,
+      manufacturerPartNumber: p.manufacturerPartNumber,
+      positions: p.positions,
+      gender: p.gender
+    }))
+  })
+
   ipcMain.handle('recent:add', async (_e, entry: { name: string; path: string }) => {
+    await ensureDirs()
     const list = await readJson<RecentEntry[]>(recentFile(), [])
     const filtered = list.filter((e) => e.path !== entry.path)
     filtered.unshift({ ...entry, openedAt: Date.now() })
@@ -393,11 +461,51 @@ function registerIpc(): void {
     await writeJsonAtomic(recentFile(), trimmed)
     return trimmed
   })
+
+  ipcMain.handle('library:getPath', async () => {
+    return libraryDir()
+  })
+
+  ipcMain.handle('library:setPath', async (_e, path: string) => {
+    const target = path || DEFAULT_LIBRARY_DIR
+    await ensureDirsForPath(target)
+    await persistLibraryPath(target)
+    return libraryDir()
+  })
+
+  ipcMain.handle('library:relocatePath', async (_e, path: string) => {
+    const target = path || DEFAULT_LIBRARY_DIR
+    const old = libraryDir()
+    if (old === target) return libraryDir()
+    await ensureDirsForPath(target)
+    const files = ['parts.json', 'pinout-templates.json', 'recent-projects.json']
+    for (const f of files) {
+      try {
+        const data = await fs.readFile(join(old, f))
+        await fs.writeFile(join(target, f), data)
+      } catch { /* file may not exist yet */ }
+    }
+    try {
+      const imagesSrc = join(old, 'images')
+      const imagesDst = join(target, 'images')
+      await fs.mkdir(imagesDst, { recursive: true })
+      const entries = await fs.readdir(imagesSrc)
+      for (const e of entries) {
+        await fs.copyFile(join(imagesSrc, e), join(imagesDst, e))
+      }
+    } catch { /* no images yet */ }
+    await persistLibraryPath(target)
+    return libraryDir()
+  })
 }
 
-app.whenReady().then(() => {
+async function ensureDirsForPath(path: string): Promise<void> {
+  await fs.mkdir(join(path, 'images'), { recursive: true })
+}
+
+app.whenReady().then(async () => {
   registerProtocol()
-  registerIpc()
+  await registerIpc()
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

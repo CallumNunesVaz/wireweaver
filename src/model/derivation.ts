@@ -82,7 +82,7 @@ export function resolveAllEndpoints(
   const resolved = new Map<string, ResolvedEndpoint>()
   const missing: string[] = []
   for (let i = 0; i < harness.endpoints.length; i++) {
-    const label = String.fromCharCode(97 + i) // 'a', 'b', 'c', ...
+    const label = endLabel(i)
     const re = resolveEndpoint(lib, instances, harness.endpoints[i])
     if (re) resolved.set(label, re)
     else missing.push(label)
@@ -152,10 +152,11 @@ export function validateHarness(
     )
   }
   const wired = seenPairs.size
+  const positiveCounts = allPins.filter((n) => n > 0)
   let status: HarnessStatus
   if (orphanWireIds.length > 0) status = 'invalid'
   else if (wired === 0) status = 'unwired'
-  else if (maxPins > 0 && wired >= Math.min(...allPins.filter(Boolean))) status = 'wired'
+  else if (maxPins > 0 && (positiveCounts.length === 0 || wired >= Math.min(...positiveCounts))) status = 'wired'
   else status = 'partial'
 
   return { status, wireCount: wired, maxPins, warnings, orphanWireIds }
@@ -209,7 +210,13 @@ export function pruneInstanceFromHarness(
       if (next) layout[next] = pos
     }
   }
-  return { ...harness, endpoints, wires, segments, layout }
+  const survivingIds = new Set(wires.map((w) => w.id))
+  const splices = harness.splices
+    ? harness.splices
+        .map((s) => ({ ...s, wireIds: s.wireIds.filter((id) => survivingIds.has(id)) }))
+        .filter((s) => s.wireIds.length >= 2)
+    : undefined
+  return { ...harness, endpoints, wires, segments, layout, splices }
 }
 
 /** Suggest a harness name from multiple device instance labels. */
@@ -220,4 +227,42 @@ export function suggestHarnessNames(
   const labels = instanceIds
     .map((id) => instances.find((i) => i.id === id)?.label ?? '??')
   return labels.join('–')
+}
+
+// ---------- Splice validation ----------
+
+/**
+ * Validate splices in a harness. Returns an array of warning strings.
+ * Rules:
+ * - A splice must have at least 2 wireIds.
+ * - All wireIds must exist in harness.wires.
+ * - A wire can belong to at most one splice.
+ */
+export function validateSplices(harness: Harness): string[] {
+  const warnings: string[] = []
+  const wireIdSet = new Set(harness.wires.map((w) => w.id))
+  const wireToSplice = new Map<string, string>()
+
+  for (const splice of harness.splices ?? []) {
+    if (splice.wireIds.length < 2) {
+      warnings.push(`Splice "${splice.name}" has fewer than 2 wires.`)
+    }
+    for (const wid of splice.wireIds) {
+      if (!wireIdSet.has(wid)) {
+        warnings.push(
+          `Splice "${splice.name}" references wire "${wid}" that does not exist in the harness.`
+        )
+      }
+      const other = wireToSplice.get(wid)
+      if (other) {
+        warnings.push(
+          `Wire "${wid}" belongs to both splice "${splice.name}" and "${other}". A wire can be in at most one splice.`
+        )
+      } else {
+        wireToSplice.set(wid, splice.name)
+      }
+    }
+  }
+
+  return warnings
 }

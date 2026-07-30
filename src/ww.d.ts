@@ -38,6 +38,17 @@ interface RecentEntry {
   openedAt: number
 }
 
+interface PartSearchResult {
+  id: string
+  kind: string
+  name: string
+  internalPartNumber: string
+  manufacturer: string
+  manufacturerPartNumber: string
+  positions?: number
+  gender?: string
+}
+
 interface WwApi {
   library: {
     load: () => Promise<LibraryLoadResult>
@@ -45,6 +56,10 @@ interface WwApi {
     saveTemplates: (templates: PinoutTemplate[]) => Promise<boolean>
     export: (data: { parts: Part[]; templates: PinoutTemplate[] }) => Promise<LibraryExportResult>
     import: () => Promise<LibraryImportResult>
+    getPath: () => Promise<string>
+    setPath: (path: string) => Promise<string>
+    relocatePath: (path: string) => Promise<string>
+    choosePath: () => Promise<string | null>
   }
   image: {
     import: (dataUrl: string, thumbDataUrl?: string) => Promise<ImageImportResult>
@@ -82,6 +97,9 @@ interface WwApi {
   recent: {
     get: () => Promise<RecentEntry[]>
     add: (entry: { name: string; path: string }) => Promise<RecentEntry[]>
+  }
+  partLookup: {
+    search: (query: string) => Promise<PartSearchResult[]>
   }
 }
 

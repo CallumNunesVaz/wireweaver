@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react'
 import { nanoid } from 'nanoid'
 import {
   ReactFlow,
@@ -30,21 +30,51 @@ import {
   Shield,
   Link2,
   Unlink2,
-  Pencil
+  Pencil,
+  Sparkles,
+  Trash2
 } from 'lucide-react'
 import { PinColumnNode, type PinColumnData } from './PinColumnNode'
 import { TwistedPairEdge } from './TwistedPairEdge'
+import { StripedWireEdge, type StripedWireData } from './StripedWireEdge'
+import { SpliceNode, type SpliceNodeData } from './SpliceNode'
 import { useLibraryStore, selectLibraryLike } from '../stores/libraryStore'
 import { useProjectStore } from '../stores/projectStore'
 import { useUiStore } from '../stores/uiStore'
 import { resolveEndpoint, validateHarness } from '../model/derivation'
 import { isWire, endLabel, type HarnessWire, type PinDef, type WirePart } from '../model/types'
-import { codeSequence, codeColor, formatGauge } from '../model/wire'
+import { codeSequence, codeColor, formatGauge, DIN_COLORS, COLOR_ABBREV_MAP, renderStripedColor } from '../model/wire'
 import { imageUrl } from '../shared/useImage'
 import { toast } from '../shared/toast'
+import { ContextMenu, type CtxItem } from '../shared/ContextMenu'
 
-const nodeTypes: NodeTypes = { pincol: PinColumnNode }
-const edgeTypes = { twisted: TwistedPairEdge }
+const nodeTypes: NodeTypes = { pincol: PinColumnNode, splice: SpliceNode }
+const edgeTypes = { twisted: TwistedPairEdge, striped: StripedWireEdge }
+
+function isStripedColor(color: string | undefined): boolean {
+  return !!color && color.startsWith('repeating-linear-gradient')
+}
+
+/** Convert a wire color (which may be a CSS gradient for striped wire)
+ *  into a solid hex usable as an SVG stroke. */
+function strokeSafe(color: string | undefined, fallback: string): string {
+  if (!color) return fallback
+  if (color.startsWith('repeating-linear-gradient')) {
+    const m = color.match(/#[0-9a-fA-F]{3,8}/)
+    return m ? m[0] : fallback
+  }
+  return color
+}
+
+/** Extract two unique hex colors from a CSS gradient string for striped wire rendering. */
+function parseStripeColors(gradient: string): { primary: string; secondary: string } | null {
+  const matches = [...gradient.matchAll(/#[0-9a-fA-F]{3,8}/g)]
+  const hexes = matches.map((m) => m[0])
+  if (hexes.length < 2) return null
+  const primary = hexes[0]
+  const secondary = hexes.find((h) => h !== primary)
+  return secondary ? { primary, secondary } : null
+}
 
 function parseHandle(h: string | null | undefined): { end: string; position: number } | null {
   if (!h) return null
@@ -52,6 +82,15 @@ function parseHandle(h: string | null | undefined): { end: string; position: num
   const parts = clean.split(':')
   if (parts.length !== 2) return null
   return { end: parts[0], position: Number(parts[1]) }
+}
+
+const COLOR_NAMES: Record<string, string> = {
+  BK: 'Black', WH: 'White', GY: 'Grey', PK: 'Pink',
+  RD: 'Red', OG: 'Orange', YE: 'Yellow', GN: 'Green',
+  BU: 'Blue', VT: 'Violet', BN: 'Brown', TQ: 'Turquoise',
+  LB: 'Light Blue', OL: 'Olive', BG: 'Beige', IV: 'Ivory',
+  SL: 'Slate', CU: 'Copper', SN: 'Silver', SR: 'Silver Grey',
+  GD: 'Gold', SP: 'Shield'
 }
 
 const COLUMN_SPACING = 420
@@ -64,6 +103,9 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
   const setWires = useProjectStore((s) => s.setHarnessWires)
   const updateHarness = useProjectStore((s) => s.updateHarness)
   const setSegment = useProjectStore((s) => s.setHarnessSegment)
+  const addSplice = useProjectStore((s) => s.addSplice)
+  const removeSplice = useProjectStore((s) => s.removeSplice)
+  const assignSpliceWire = useProjectStore((s) => s.assignSpliceWire)
   const parts = useLibraryStore((s) => s.parts)
   const templates = useLibraryStore((s) => s.templates)
 
@@ -73,6 +115,7 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
   const [popupPos, setPopupPos] = useState<{ x: number; y: number } | null>(null)
   const [hideUnused, setHideUnused] = useState(false)
   const [editingSegment, setEditingSegment] = useState<string | null>(null)
+  const [wireMenu, setWireMenu] = useState<{ x: number; y: number } | null>(null)
 
   const canvasRef = useRef<HTMLDivElement>(null)
 
@@ -165,7 +208,7 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
   const nodes: Node[] = useMemo(() => {
     if (!harness || numEndpoints === 0) return []
     const cols = Math.max(1, Math.ceil(Math.sqrt(numEndpoints)))
-    return endpoints.map((_, i) => {
+    const endpointNodes: Node[] = endpoints.map((_, i) => {
       const label = endLabel(i)
       const re = resolvedEndpoints[i]
       const position = harness.layout?.[label] ?? {
@@ -188,23 +231,62 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
         } satisfies PinColumnData
       }
     })
-  }, [harness, numEndpoints, endpoints, resolvedEndpoints, wiredPositions, pinColors, hideUnused])
+
+    // Splice nodes positioned at visual center between the endpoints they join
+    const spliceNodes: Node[] = (harness.splices ?? []).map((sp, idx) => {
+      const pos = sp.position ?? {
+        x: ((idx % cols) * COLUMN_SPACING) + COLUMN_SPACING / 2,
+        y: Math.floor(idx / cols) * ROW_SPACING + ROW_SPACING / 2
+      }
+      return {
+        id: `splice-${sp.id}`,
+        type: 'splice',
+        position: pos,
+        data: {
+          spliceId: sp.id,
+          name: sp.name,
+          wirePartId: sp.wirePartId,
+          onDropWire: (spliceId: string, wp: WirePart) => assignSpliceWire(harnessId, spliceId, wp.id)
+        } satisfies SpliceNodeData
+      }
+    })
+    return [...endpointNodes, ...spliceNodes]
+  }, [harness, numEndpoints, endpoints, resolvedEndpoints, wiredPositions, pinColors, hideUnused, harnessId, assignSpliceWire])
 
   // React Flow drives column motion locally; structure resyncs from the store.
   const [flowNodes, setFlowNodes, onNodesChangeRaw] = useNodesState<Node>([])
+  const pendingNodeChanges = useRef<NodeChange[]>([])
+  const rafRef = useRef(0)
+
   useEffect(() => {
     setFlowNodes(nodes)
   }, [nodes, setFlowNodes])
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
-      onNodesChangeRaw(changes)
-      for (const c of changes) {
-        if (c.type === 'position' && c.dragging === false && c.position) {
+      const immediate = changes.filter((c) => c.type !== 'position' || (c.type === 'position' && c.dragging === false))
+      const dragPositions = changes.filter((c) => c.type === 'position' && c.dragging === true)
+
+      if (immediate.length > 0) onNodesChangeRaw(immediate)
+
+      for (const c of immediate) {
+        if (c.type === 'position' && c.position) {
           const label = c.id.replace(/^end-/, '')
           const current = useProjectStore.getState().project.harnesses.find((h) => h.id === harnessId)
           updateHarness(harnessId, {
             layout: { ...(current?.layout ?? {}), [label]: c.position }
+          })
+        }
+      }
+
+      if (dragPositions.length > 0) {
+        pendingNodeChanges.current.push(...dragPositions)
+        if (rafRef.current === 0) {
+          rafRef.current = requestAnimationFrame(() => {
+            rafRef.current = 0
+            const batch = pendingNodeChanges.current
+            pendingNodeChanges.current = []
+            onNodesChangeRaw(batch)
           })
         }
       }
@@ -220,10 +302,15 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
     return allWires.map((w) => {
       const unassigned = !w.wirePartId
       const isSelected = sel.has(w.id)
-      // A mutual twisted pair renders as a helix: each strand needs its
-      // mate's handle ids to compute the shared centerline.
       const mate = w.twistedWith ? byId.get(w.twistedWith) : undefined
       const isTwisted = !!mate && mate.twistedWith === w.id
+
+      // Striped wires get a custom edge type that renders two-colour bands.
+      const isStriped = isStripedColor(w.color)
+      const stripeData: StripedWireData | undefined = isStriped && w.color
+        ? parseStripeColors(w.color) ?? undefined
+        : undefined
+
       let twistData: Record<string, unknown> | undefined
       if (isTwisted && mate) {
         const aligned = mate.from.end === w.from.end
@@ -236,6 +323,23 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
           phase: w.id < mate.id ? 0 : Math.PI
         }
       }
+      const baseColor = isStriped
+        ? (stripeData?.primary ?? '#5b9bff')
+        : strokeSafe(w.color, unassigned ? '#c48a2f' : '#5b9bff')
+
+      const edgeType = isTwisted ? 'twisted' : isStriped ? 'striped' : undefined
+
+      // Merge stripe data into twist data so TwistedPairEdge can render
+      // two-colour bands when the wire has a striped colour.
+      let edgeData: Record<string, unknown> | undefined
+      if (isTwisted) {
+        edgeData = stripeData
+          ? { ...twistData, stripePrimary: stripeData.primary, stripeSecondary: stripeData.secondary }
+          : twistData
+      } else if (isStriped) {
+        edgeData = stripeData
+      }
+
       return {
         id: w.id,
         source: `end-${w.from.end}`,
@@ -243,27 +347,18 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
         target: `end-${w.to.end}`,
         targetHandle: `${w.to.end}:${w.to.position}-tgt`,
         selected: isSelected,
-        type: isTwisted ? 'twisted' : undefined,
-        data: twistData,
+        type: edgeType,
+        data: edgeData,
         style: {
-          stroke: w.color ?? (unassigned ? '#c48a2f' : '#5b9bff'),
+          stroke: edgeType === 'striped' ? undefined : baseColor,
           strokeWidth: isSelected ? 3 : 2,
-          strokeDasharray: unassigned ? '5 3' : undefined,
-          opacity: isSelected ? 1 : 0.85
+          strokeDasharray: unassigned && edgeType !== 'striped' ? '5 3' : undefined,
+          opacity: isSelected ? 1 : 0.85,
+          filter: isSelected ? `drop-shadow(0 0 5px ${baseColor}cc)` : undefined
         }
       }
     })
   }, [harness, allWires, selectedWireIds])
-
-  const pinWired = useCallback(
-    (end: string, position: number) =>
-      (harness?.wires ?? []).some(
-        (w) =>
-          (w.from.end === end && w.from.position === position) ||
-          (w.to.end === end && w.to.position === position)
-      ),
-    [harness?.wires]
-  )
 
   const isValidConnection = useCallback(
     (c: Connection | Edge) => {
@@ -271,11 +366,18 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
       const to = parseHandle(c.targetHandle)
       if (!from || !to) return false
       if (from.end === to.end && from.position === to.position) return false
-      if (pinWired(from.end, from.position)) return false
-      if (pinWired(to.end, to.position)) return false
+      const latestWires = useProjectStore.getState().project.harnesses.find((h) => h.id === harnessId)?.wires ?? []
+      const isWired = (end: string, position: number) =>
+        latestWires.some(
+          (w) =>
+            (w.from.end === end && w.from.position === position) ||
+            (w.to.end === end && w.to.position === position)
+        )
+      if (isWired(from.end, from.position)) return false
+      if (isWired(to.end, to.position)) return false
       return true
     },
-    [pinWired]
+    [harnessId]
   )
 
   const onConnect = useCallback(
@@ -378,8 +480,8 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
         ))
         return
       }
-      const colors: (string | undefined)[] = wirePart.colorCode
-        ? codeSequence(wirePart.colorCode, conductors)
+      const colors = wirePart.colorCode
+        ? codeSequence(wirePart.colorCode, conductors).map((c) => codeColor(c))
         : new Array(conductors).fill(wirePart.color ?? undefined)
       const newStrands: HarnessWire[] = []
       for (let i = 0; i < conductors; i++) {
@@ -388,11 +490,14 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
           from: { ...old.from },
           to: { ...old.to },
           wirePartId: wirePart.id,
-          color: colors[i]
+          color: colors[i],
+          label: wirePart.colorCode
+            ? codeSequence(wirePart.colorCode, conductors)[i]
+            : undefined
         })
       }
       if (wirePart.shield) {
-        newStrands.push({ id: nanoid(), from: { ...old.from }, to: { ...old.to }, wirePartId: wirePart.id, color: '#84878c' })
+        newStrands.push({ id: nanoid(), from: { ...old.from }, to: { ...old.to }, wirePartId: wirePart.id, color: '#84878c', label: 'SHIELD' })
       }
       const updated = [...harness.wires]
       updated.splice(wireIdx, 1, ...newStrands)
@@ -401,6 +506,113 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
       setPopupPos(null)
     },
     [harness, harnessId, setWires]
+  )
+
+  /** Deploy a multi-core cable between two endpoint columns, auto-wiring
+   * matching signal names. Each conductor gets a colour from the cable's
+   * colour code. Remaining strands that can't match are wired to the first
+   * unwired pin on each side. */
+  const deployMultiCore = useCallback(
+    (wirePart: WirePart) => {
+      if (!harness || numEndpoints < 2) {
+        toast('Need at least 2 endpoints to deploy a multi-core cable.', 'info')
+        return
+      }
+      // Use the first two endpoint columns (most common case).
+      const labelA = endLabel(0)
+      const labelB = endLabel(1)
+      const reA = resolvedEndpoints[0]
+      const reB = resolvedEndpoints[1]
+      if (!reA || !reB) return
+
+      const conductors = wirePart.conductors ?? 1
+      const colors: (string | undefined)[] = wirePart.colorCode
+        ? codeSequence(wirePart.colorCode, conductors).map((c) => codeColor(c))
+        : new Array(conductors).fill(wirePart.color ?? undefined)
+      const labels: (string | undefined)[] = wirePart.colorCode
+        ? codeSequence(wirePart.colorCode, conductors)
+        : new Array(conductors).fill(undefined)
+
+      const norm = (p: PinDef) => p.signal.trim().toLowerCase()
+      const used = new Set(
+        harness.wires.flatMap((w) => [
+          `${w.from.end}:${w.from.position}`,
+          `${w.to.end}:${w.to.position}`
+        ])
+      )
+
+      const newStrands: HarnessWire[] = []
+      const freeA = reA.pins.filter((p) => p.signalClass !== 'nc' && !used.has(`${labelA}:${p.position}`))
+      const freeB = reB.pins.filter((p) => p.signalClass !== 'nc' && !used.has(`${labelB}:${p.position}`))
+
+      for (let ci = 0; ci < conductors; ci++) {
+        // Try to match by signal name.
+        let matched = false
+        for (const pa of [...freeA]) {
+          const sa = norm(pa)
+          if (!sa) continue
+          const pbIdx = freeB.findIndex((pb) => norm(pb) === sa)
+          if (pbIdx >= 0) {
+            const pb = freeB[pbIdx]
+            newStrands.push({
+              id: nanoid(),
+              from: { end: labelA, position: pa.position },
+              to: { end: labelB, position: pb.position },
+              wirePartId: wirePart.id,
+              color: colors[ci],
+              label: labels[ci]
+            })
+            freeA.splice(freeA.indexOf(pa), 1)
+            freeB.splice(pbIdx, 1)
+            matched = true
+            break
+          }
+        }
+        // Fallback: wire to first available pins on each side.
+        if (!matched && freeA.length > 0 && freeB.length > 0) {
+          const pa = freeA.shift()!
+          const pb = freeB.shift()!
+          newStrands.push({
+            id: nanoid(),
+            from: { end: labelA, position: pa.position },
+            to: { end: labelB, position: pb.position },
+            wirePartId: wirePart.id,
+            color: colors[ci],
+            label: labels[ci]
+          })
+        }
+      }
+
+      if (wirePart.shield && freeA.length > 0 && freeB.length > 0) {
+        // Shield goes to a ground pin if possible, otherwise last free pin.
+        const gndA = freeA.find((p) => p.signalClass === 'ground')
+        const gndB = freeB.find((p) => p.signalClass === 'ground')
+        if (gndA && gndB) {
+          newStrands.push({ id: nanoid(), from: { end: labelA, position: gndA.position }, to: { end: labelB, position: gndB.position }, wirePartId: wirePart.id, color: '#84878c', label: 'SHIELD' })
+        } else if (gndA && freeB.length > 0) {
+          const pb = freeB.shift()!
+          newStrands.push({ id: nanoid(), from: { end: labelA, position: gndA.position }, to: { end: labelB, position: pb.position }, wirePartId: wirePart.id, color: '#84878c', label: 'SHIELD' })
+        } else if (gndB && freeA.length > 0) {
+          const pa = freeA.shift()!
+          newStrands.push({ id: nanoid(), from: { end: labelA, position: pa.position }, to: { end: labelB, position: gndB.position }, wirePartId: wirePart.id, color: '#84878c', label: 'SHIELD' })
+        } else if (freeA.length > 0 && freeB.length > 0) {
+          const pa = freeA.shift()!
+          const pb = freeB.shift()!
+          newStrands.push({ id: nanoid(), from: { end: labelA, position: pa.position }, to: { end: labelB, position: pb.position }, wirePartId: wirePart.id, color: '#84878c', label: 'SHIELD' })
+        }
+      }
+
+      if (newStrands.length > 0) {
+        setWires(harnessId, [...harness.wires, ...newStrands])
+        toast(
+          `Deployed "${wirePart.name}": ${newStrands.length} wire(s) between ${reA.instance.label} and ${reB.instance.label}.`,
+          'success'
+        )
+      } else {
+        toast('No free pins available for multi-core cable.', 'info')
+      }
+    },
+    [harness, numEndpoints, resolvedEndpoints, harnessId, setWires]
   )
 
   const toggleTwistedPair = useCallback(() => {
@@ -434,7 +646,7 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
         | HTMLElement
         | null
       if (!el) return
-      const dataUrl = await toPng(el, { backgroundColor: '#14161b' })
+      const dataUrl = await toPng(el, { backgroundColor: 'var(--color-bg)' })
       const link = document.createElement('a')
       link.download = `${harness?.name ?? 'harness'}.png`
       link.href = dataUrl
@@ -451,10 +663,20 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
         const next = [...prev, ed.id]
         return next.slice(-2)
       })
-      if (canvasRef.current) {
-        const rect = canvasRef.current.getBoundingClientRect()
-        setPopupPos({ x: _.clientX - rect.left, y: _.clientY - rect.top })
-      }
+      setPopupPos(null)
+    },
+    []
+  )
+
+  const onEdgeContextMenu = useCallback(
+    (e: React.MouseEvent, ed: Edge) => {
+      e.preventDefault()
+      setSelectedWireIds((prev) => {
+        if (prev.includes(ed.id)) return prev
+        const next = [...prev, ed.id]
+        return next.slice(-2)
+      })
+      setWireMenu({ x: e.clientX, y: e.clientY })
     },
     []
   )
@@ -463,6 +685,7 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
   const selectedWires = selectedWireIds.map((id) => harness.wires.find((w) => w.id === id)).filter(Boolean) as HarnessWire[]
   const singleWire = selectedWires.length === 1 ? selectedWires[0] : null
   const isTwisted = !!singleWire?.twistedWith
+
   // Twisting only makes sense for wires that run together — same endpoint
   // pair (a twisted pair diverging to different endpoints is physically
   // meaningless, and the helix rendering needs a shared centerline).
@@ -472,6 +695,42 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
   const areAlreadyTwisted = selectedWires.length === 2
     && selectedWires[0].twistedWith === selectedWires[1].id
     && selectedWires[1].twistedWith === selectedWires[0].id
+
+  // Wire context menu actions
+  const deleteSelectedWires = () => {
+    if (selectedWireIds.length === 0) return
+    setWires(harnessId, harness.wires.filter((w) => !selectedWireIds.includes(w.id)))
+    setSelectedWireIds([])
+    setPopupPos(null)
+    setWireMenu(null)
+  }
+
+  const editSelectedWire = () => {
+    setWireMenu(null)
+    setPopupPos({ x: 100, y: 100 })
+  }
+
+  const wireMenuItems: CtxItem[] = wireMenu ? [
+    ...(canTwist ? [{
+      label: areAlreadyTwisted ? 'Untwist pair' : 'Form twisted pair',
+      icon: areAlreadyTwisted ? <Unlink2 size={14} /> : <Link2 size={14} />,
+      onClick: () => {
+        toggleTwistedPair()
+        setWireMenu(null)
+      }
+    }] : []),
+    {
+      label: 'Edit Wire',
+      icon: <Pencil size={14} />,
+      onClick: editSelectedWire
+    },
+    {
+      label: 'Delete',
+      icon: <Trash2 size={14} />,
+      danger: true,
+      onClick: deleteSelectedWires
+    }
+  ] : []
 
   return (
     <div className="fixed inset-0 z-30 flex flex-col bg-panel">
@@ -533,6 +792,21 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
         <button className="ww-btn" onClick={clearWires} title="Clear all wires">
           <Eraser size={15} /> Clear
         </button>
+        <button
+          className="ww-btn"
+          onClick={() => {
+            if (selectedWireIds.length >= 2) {
+              addSplice(harnessId, selectedWireIds)
+              setSelectedWireIds([])
+              setPopupPos(null)
+            } else {
+              toast('Select at least 2 wires to splice them.', 'error')
+            }
+          }}
+          title="Create splice from selected wires"
+        >
+          <Link2 size={15} /> Splice
+        </button>
         <button className="ww-btn" onClick={() => setHideUnused(!hideUnused)} title={hideUnused ? 'Show unused pins' : 'Hide unused pins'}>
           {hideUnused ? <EyeOff size={15} /> : <Eye size={15} />}
         </button>
@@ -571,12 +845,22 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
               {wireParts.map((wp) => (
                 <WirePartCard key={wp.id} part={wp}
                   gaugeDisplay={wp.gauge ? formatGauge(wp.gauge) : undefined}
-                  colors={wp.colorCode ? codeSequence(wp.colorCode, Math.min(wp.conductors ?? 1, 8)) : undefined}
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData('application/ww-harness-wire', wp.id)
-                    e.dataTransfer.effectAllowed = 'copy'
-                  }}
-                  onClick={() => { if (singleWire) assignWirePart(wp, singleWire.id) }}
+                    colors={wp.colorCode ? codeSequence(wp.colorCode, Math.min(wp.conductors ?? 1, 8)) : undefined}
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('application/ww-harness-wire', wp.id)
+                      e.dataTransfer.setData('application/ww-multicore', String(wp.conductors ?? 1))
+                      e.dataTransfer.effectAllowed = 'copy'
+                    }}
+                    onClick={() => {
+                      const conductors = wp.conductors ?? 1
+                      if (conductors > 1) {
+                        deployMultiCore(wp)
+                      } else if (singleWire) {
+                        assignWirePart(wp, singleWire.id)
+                      } else {
+                        toast('Select a wire first, or deploy a multi-core cable onto the canvas.', 'info')
+                      }
+                    }}
                 />
               ))}
             </div>
@@ -585,18 +869,58 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
               <textarea className="ww-input h-14 resize-none text-[11px]" placeholder="Description…" value={harness.description ?? ''} onChange={(e) => updateHarness(harnessId, { description: e.target.value })} />
               <textarea className="ww-input h-14 resize-none text-[11px]" placeholder="Notes…" value={harness.notes ?? ''} onChange={(e) => updateHarness(harnessId, { notes: e.target.value })} />
             </div>
-            <div className="border-t border-edge px-2 py-1.5 text-[10px] text-muted">Drag onto a connection · Click to assign</div>
+            {(harness.splices ?? []).length > 0 && (
+              <div className="border-t border-edge p-2 space-y-1.5">
+                <div className="flex items-center gap-1.5 px-1 text-[10px] uppercase tracking-wide text-muted">
+                  <Link2 size={12} /> Splices ({harness.splices!.length})
+                </div>
+                {harness.splices!.map((sp) => (
+                  <div key={sp.id} className="rounded border border-edge bg-panelalt px-2 py-1 text-[10px]">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">{sp.name}</span>
+                      <button
+                        className="text-muted hover:text-[#e5484d]"
+                        onClick={() => removeSplice(harnessId, sp.id)}
+                        title="Remove splice"
+                      >
+                        <X size={11} />
+                      </button>
+                    </div>
+                    <div className="text-muted">{sp.wireIds.length} wires</div>
+                    {sp.wirePartId && <div className="text-accent">Wire part assigned</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="border-t border-edge px-2 py-1.5 text-[10px] text-muted">Drag onto a connection or splice · Click to assign</div>
           </aside>
         )}
 
         <div className="relative min-w-0 flex-1" ref={canvasRef}
-          onDragOver={(e) => { if (e.dataTransfer.types.includes('application/ww-harness-wire')) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' } }}
+          onDragOver={(e) => {
+            if (e.dataTransfer.types.includes('application/ww-harness-wire')) {
+              e.preventDefault()
+              e.dataTransfer.dropEffect = 'copy'
+            } else {
+              e.dataTransfer.dropEffect = 'none'
+            }
+          }}
           onDrop={(e) => {
             const wpId = e.dataTransfer.getData('application/ww-harness-wire')
             if (!wpId) return
             e.preventDefault()
             const wp = parts.find((p) => isWire(p) && p.id === wpId) as WirePart | undefined
-            if (wp && selectedWireIds.length === 1) assignWirePart(wp, selectedWireIds[0])
+            if (!wp) return
+            const conductors = wp.conductors ?? 1
+            if (conductors > 1) {
+              deployMultiCore(wp)
+            } else if (selectedWireIds.length === 1) {
+              assignWirePart(wp, selectedWireIds[0])
+            } else {
+              // Dropped a single-conductor wire with no selection — prompt.
+              const autoWire = window.confirm(`No wire selected. Auto-wire "${wp.name}" between the first two endpoints?`)
+              if (autoWire) deployMultiCore(wp)
+            }
           }}
         >
           <ReactFlowProvider>
@@ -605,12 +929,15 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
               onConnect={onConnect} onEdgesChange={onEdgesChange}
               isValidConnection={isValidConnection}
               onEdgeClick={onEdgeClick}
+              onEdgeContextMenu={onEdgeContextMenu}
               onPaneClick={() => { setSelectedWireIds([]); setPopupPos(null) }}
               connectionLineStyle={{ stroke: '#5b9bff', strokeWidth: 2, strokeDasharray: '5 4', opacity: 0.8 }}
               connectionRadius={50} fitView fitViewOptions={{ padding: 0.3 }}
-              deleteKeyCode={['Backspace', 'Delete']} proOptions={{ hideAttribution: true }}
+              deleteKeyCode={['Backspace', 'Delete']}
+              selectNodesOnDrag={false}
+              proOptions={{ hideAttribution: true }}
             >
-              <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="#2a2f3a" />
+              <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="var(--color-edge)" />
               <Controls showInteractive={false} />
             </ReactFlow>
           </ReactFlowProvider>
@@ -625,13 +952,22 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
               onToggleTwist={toggleTwistedPair}
             />
           )}
+
+          {wireMenu && (
+            <ContextMenu
+              x={wireMenu.x}
+              y={wireMenu.y}
+              items={wireMenuItems}
+              onClose={() => setWireMenu(null)}
+            />
+          )}
         </div>
       </div>
     </div>
   )
 }
 
-function WirePartCard({ part, gaugeDisplay, colors, onDragStart, onClick }: {
+const WirePartCard = memo(function WirePartCard({ part, gaugeDisplay, colors, onDragStart, onClick }: {
   part: WirePart
   gaugeDisplay?: string
   colors?: string[]
@@ -640,31 +976,85 @@ function WirePartCard({ part, gaugeDisplay, colors, onDragStart, onClick }: {
 }) {
   const img = imageUrl(part.imageHash, 'thumb')
   const conductors = part.conductors ?? 1
+  const isMultiCore = conductors > 1
+
+  // Build a full colour swatch strip for the cable.
+  const fullColors: string[] = part.colorCode
+    ? codeSequence(part.colorCode, conductors)
+    : []
+  const swatchCount = Math.min(fullColors.length || conductors, 12)
+
   return (
-    <div className="group flex cursor-grab items-center gap-2 rounded border border-edge bg-panelalt px-2 py-1.5 hover:border-accent active:cursor-grabbing"
-      draggable onDragStart={onDragStart} onClick={onClick}
-      title={`${part.name}${part.shield ? ' · shielded' : ''}${part.category === 'bundle' ? ' · bundle' : ''}`}>
-      <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded bg-edge">
-        {img ? <img src={img} className="h-full w-full object-cover" alt="" /> : part.shield ? <Shield size={12} className="text-muted" /> : <Cable size={12} className="text-muted" />}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-xs font-medium">{part.name}</div>
-        <div className="flex flex-wrap items-center gap-1 text-[10px] text-muted">
-          {gaugeDisplay && <span>{gaugeDisplay}</span>}
-          {conductors > 1 && <span className="rounded bg-accent/20 px-1 text-accent">{conductors}×</span>}
-          {part.shield && <Shield size={10} className="text-[#c48a2f]" />}
-          {part.category === 'bundle' && <span className="rounded bg-[#c48a2f]/20 px-1 text-[#c48a2f]">bundle</span>}
-          {colors && colors.length > 0 && (
-            <span className="flex items-center gap-0.5 ml-0.5">
-              {colors.slice(0, 4).map((c, i) => <span key={i} className="inline-block h-2 w-2 rounded-full border border-white/20" style={{ background: codeColor(c) }} />)}
-              {colors.length > 4 && <span className="text-[8px]">+</span>}
-            </span>
-          )}
+    <div
+      className="group flex cursor-grab flex-col gap-1 rounded border p-1.5 transition-colors hover:border-accent active:cursor-grabbing"
+      style={{
+        borderColor: isMultiCore ? 'var(--color-edge)' : undefined,
+        background: isMultiCore ? 'linear-gradient(135deg, var(--color-panelalt) 0%, var(--color-panelalt) 50%, var(--color-accent)/0.04 100%)' : undefined
+      }}
+      draggable
+      onDragStart={onDragStart}
+      onClick={onClick}
+      title={`${part.name}${part.shield ? ' · shielded' : ''}${isMultiCore ? ` · ${conductors}-core` : ''}${part.colorCode ? ` · ${part.colorCode}` : ''}`}
+    >
+      {/* Top row: icon + name */}
+      <div className="flex items-center gap-2">
+        <div className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded bg-edge">
+          {img ? <img src={img} className="h-full w-full object-cover" alt="" /> : part.shield ? <Shield size={11} className="text-muted" /> : <Cable size={11} className="text-muted" />}
         </div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[11px] font-medium leading-tight">{part.name}</div>
+        </div>
+        {isMultiCore && <Sparkles size={11} className="text-accent shrink-0" />}
       </div>
+
+      {/* Second row: meta */}
+      <div className="flex flex-wrap items-center gap-1 text-[10px] text-muted pl-8">
+        {gaugeDisplay && <span>{gaugeDisplay}</span>}
+        {isMultiCore && <span className="rounded bg-accent/15 px-1 text-accent font-medium">{conductors}×</span>}
+        {part.shield && <Shield size={9} className="text-[#c48a2f]" />}
+        {part.category === 'bundle' && <span className="rounded bg-[#c48a2f]/20 px-1 text-[#c48a2f]">bundle</span>}
+        {part.colorCode && <span className="rounded bg-panelalt px-1">{part.colorCode}</span>}
+      </div>
+
+      {/* Colour swatch strip — multi-core cables get expanded strip */}
+      {isMultiCore && fullColors.length > 0 && (
+        <div className="pl-8 pt-0.5">
+          <div className="flex gap-0.5 flex-wrap">
+            {fullColors.slice(0, swatchCount).map((abbr, i) => (
+              <span
+                key={i}
+                className="inline-flex items-center gap-0.5 rounded-sm px-1 text-[9px] font-medium leading-tight"
+                style={{ background: codeColor(abbr) + '20', color: codeColor(abbr), border: `1px solid ${codeColor(abbr)}40` }}
+                title={`${abbr}${COLOR_NAMES[abbr] ? ' — ' + COLOR_NAMES[abbr] : ''}`}
+              >
+                <span
+                  className="inline-block h-2 w-2 rounded-full shrink-0"
+                  style={{ background: codeColor(abbr), border: '1px solid rgba(255,255,255,0.3)' }}
+                />
+                {abbr}
+              </span>
+            ))}
+            {fullColors.length > swatchCount && (
+              <span className="text-[9px] text-muted self-center">+{fullColors.length - swatchCount} more</span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Single-core: simple swatch dots */}
+      {!isMultiCore && colors && colors.length > 0 && (
+        <div className="pl-8 pt-0.5">
+          <span className="flex items-center gap-0.5">
+            {colors.slice(0, 4).map((c, i) => (
+              <span key={i} className="inline-block h-2.5 w-2.5 rounded-full border border-white/20" style={{ background: codeColor(c) }} />
+            ))}
+            {colors.length > 4 && <span className="text-[8px] text-muted">+</span>}
+          </span>
+        </div>
+      )}
     </div>
   )
-}
+})
 
 function WireEditPopup({ selectedWires, wireParts, pos, canTwist, areAlreadyTwisted, isTwisted, onClose, onUpdate, onAssign, onToggleTwist }: {
   selectedWires: HarnessWire[]
@@ -675,19 +1065,18 @@ function WireEditPopup({ selectedWires, wireParts, pos, canTwist, areAlreadyTwis
   onAssign: (wp: WirePart) => void; onToggleTwist: () => void
 }) {
   const [open, setOpen] = useState(false)
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
   useEffect(() => {
-    const onDown = (e: MouseEvent) => {
+    const listener = (e: MouseEvent) => {
       const target = e.target as HTMLElement
-      // Clicking another wire ADDS it to the selection (twisted pairs need two
-      // wires selected) — closing here would wipe the selection before the
-      // edge's own click handler runs.
       if (target.closest?.('.react-flow__edge')) return
       const el = document.getElementById('ww-wire-popup')
-      if (el && !el.contains(target)) onClose()
+      if (el && !el.contains(target)) onCloseRef.current()
     }
-    const t = setTimeout(() => document.addEventListener('mousedown', onDown), 100)
-    return () => { clearTimeout(t); document.removeEventListener('mousedown', onDown) }
-  }, [onClose])
+    const t = setTimeout(() => document.addEventListener('mousedown', listener), 100)
+    return () => { clearTimeout(t); document.removeEventListener('mousedown', listener) }
+  }, [])
   const x = Math.max(8, Math.min(pos.x - 120, window.innerWidth - 300))
   const y = Math.max(pos.y - 20, 0)
 
@@ -714,8 +1103,127 @@ function WireEditPopup({ selectedWires, wireParts, pos, canTwist, areAlreadyTwis
           </button>
         )}
       </div>
-    )
-  }
+  )
+}
+
+// ---------- Colour swatch picker ----------
+
+/** The first 10 DIN 47100 colours used as the primary swatch palette. */
+const DIN_SWATCHES = DIN_COLORS.slice(0, 10)
+
+/** Common pairs used as striped presets. */
+const STRIPED_PRESETS: [string, string][] = [
+  ['WH', 'RD'], ['YE', 'GN'], ['BK', 'WH'], ['BN', 'BU'],
+  ['RD', 'BK'], ['OG', 'WH'], ['GN', 'YE'], ['BU', 'GN'],
+  ['WH', 'GN'], ['GY', 'PK'], ['VT', 'WH'], ['BN', 'YE']
+]
+
+function ColorSwatchPicker({ currentColor, onChange }: {
+  currentColor: string | undefined
+  onChange: (color: string | undefined) => void
+}) {
+  const [showCustom, setShowCustom] = useState(false)
+  const [customColor, setCustomColor] = useState('#5b9bff')
+
+  return (
+    <div className="space-y-2">
+      {/* DIN solid colour row */}
+      <div className="text-[10px] text-muted">Solid (DIN 47100)</div>
+      <div className="flex flex-wrap gap-1">
+        {DIN_SWATCHES.map((abbr) => {
+          const hex = COLOR_ABBREV_MAP[abbr]
+          const selected = !isStripedColor(currentColor) && currentColor === hex
+          return (
+            <button
+              key={abbr}
+              className={`relative h-6 w-6 rounded border-2 transition-transform hover:scale-110 ${
+                selected ? 'border-accent scale-110' : 'border-edge hover:border-accent/50'
+              }`}
+              style={{ background: hex }}
+              title={`${abbr}${COLOR_NAMES[abbr] ? ' — ' + COLOR_NAMES[abbr] : ''}`}
+              onClick={() => onChange(hex)}
+            >
+              {selected && (
+                <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold" style={{ color: hex === '#000000' || hex === '#8000ff' || hex === '#0066ff' ? 'white' : 'black' }}>✓</span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Striped pairs row */}
+      <div className="text-[10px] text-muted">Striped</div>
+      <div className="flex flex-wrap gap-1">
+        {STRIPED_PRESETS.map(([p, s]) => {
+          const primary = COLOR_ABBREV_MAP[p]
+          const secondary = COLOR_ABBREV_MAP[s]
+          const gradient = renderStripedColor({ primary, secondary })
+          const selected = currentColor === gradient
+          return (
+            <button
+              key={`${p}/${s}`}
+              className={`relative h-6 w-6 rounded border-2 transition-transform hover:scale-110 ${
+                selected ? 'border-accent scale-110' : 'border-edge hover:border-accent/50'
+              }`}
+              style={{ background: gradient }}
+              title={`${p}/${s}${COLOR_NAMES[p] ? ' — ' + COLOR_NAMES[p] : ''}/${COLOR_NAMES[s] ?? ''}`}
+              onClick={() => onChange(gradient)}
+            >
+              {selected && (
+                <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-white drop-shadow">✓</span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Custom picker + clear */}
+      <div className="flex items-center gap-1">
+        <button
+          className="ww-btn text-[11px]"
+          onClick={() => setShowCustom(!showCustom)}
+          title="Custom colour…"
+        >
+          🎨 Custom
+        </button>
+        {currentColor && (
+          <button
+            className="ww-btn text-[11px] text-muted hover:text-ink"
+            onClick={() => onChange(undefined)}
+            title="Clear colour"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
+      {showCustom && (
+        <div className="flex items-center gap-2 rounded border border-edge bg-panelalt p-2">
+          <input
+            type="color"
+            className="h-7 w-10 rounded border border-edge cursor-pointer"
+            value={isStripedColor(currentColor) ? customColor : (currentColor ?? customColor)}
+            onChange={(e) => {
+              setCustomColor(e.target.value)
+              onChange(e.target.value)
+            }}
+          />
+          <span className="text-[10px] text-muted truncate flex-1">
+            {isStripedColor(currentColor)
+              ? 'Striped (custom colour for preview)'
+              : currentColor || 'No colour set'}
+          </span>
+          <button
+            className="text-[10px] text-muted hover:text-ink"
+            onClick={() => { setShowCustom(false) }}
+          >
+            <X size={12} />
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
 
   const wire = selectedWires[0]
   const assignedPart = wireParts.find((p) => p.id === wire.wirePartId)
@@ -758,7 +1266,10 @@ function WireEditPopup({ selectedWires, wireParts, pos, canTwist, areAlreadyTwis
         </div>
         <div>
           <label className="ww-label">Colour</label>
-          <input type="color" className="h-7 w-10 rounded border border-edge bg-panelalt cursor-pointer" value={wire.color ?? '#5b9bff'} onChange={(e) => onUpdate({ color: e.target.value })} />
+          <ColorSwatchPicker
+            currentColor={wire.color}
+            onChange={(color) => onUpdate({ color })}
+          />
         </div>
         <div>
           <label className="ww-label">Label</label>

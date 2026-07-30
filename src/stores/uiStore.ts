@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { PartKind } from '../model/types'
+import type { Part, PinoutTemplate, PartKind } from '../model/types'
 
 export type LibraryCategory = PartKind | 'pinout'
 
@@ -17,6 +17,8 @@ interface UiState {
   librarySearch: string
   libraryCollapsed: boolean
   selection: { type: 'instance' | 'harness'; id: string } | null
+  /** Instance IDs currently in the multi-selection (Ctrl+click). */
+  multiSelectedIds: string[]
   hoverHarnessId: string | null
   /**
    * The hovered harness's endpoints, precomputed when hover starts so device
@@ -32,10 +34,20 @@ interface UiState {
   libraryManagerOpen: boolean
   reportsOpen: boolean
   drcOpen: boolean
+  cheatsheetOpen: boolean
+  calculatorOpen: boolean
+  docsOpen: boolean
+
+  // reconciliation
+  showReconciliation: boolean
+  reconciliationItems: { parts: Part[]; templates: PinoutTemplate[] }
 
   setLibrarySearch: (s: string) => void
   toggleLibrary: () => void
   select: (sel: UiState['selection']) => void
+  /** Add/remove an instance from the multi-selection (Ctrl+click). */
+  toggleMultiSelect: (instanceId: string) => void
+  clearMultiSelect: () => void
   setHoverHarness: (id: string | null, endpoints?: HoverEndpoint[]) => void
 
   openPartEditor: (target: PartEditorTarget) => void
@@ -47,12 +59,19 @@ interface UiState {
   toggleLibraryManager: () => void
   toggleReports: () => void
   toggleDrc: () => void
+  toggleCheatsheet: () => void
+  toggleCalculator: () => void
+  toggleDocs: () => void
+
+  setReconciliation: (items: { parts: Part[]; templates: PinoutTemplate[] }) => void
+  dismissReconciliation: () => void
 }
 
 export const useUiStore = create<UiState>((set) => ({
   librarySearch: '',
   libraryCollapsed: false,
   selection: null,
+  multiSelectedIds: [],
   hoverHarnessId: null,
   hoverEndpoints: [],
 
@@ -62,10 +81,26 @@ export const useUiStore = create<UiState>((set) => ({
   libraryManagerOpen: false,
   reportsOpen: false,
   drcOpen: false,
+  cheatsheetOpen: false,
+  calculatorOpen: false,
+  docsOpen: false,
+
+  showReconciliation: false,
+  reconciliationItems: { parts: [], templates: [] },
 
   setLibrarySearch: (s) => set({ librarySearch: s }),
   toggleLibrary: () => set((st) => ({ libraryCollapsed: !st.libraryCollapsed })),
-  select: (selection) => set({ selection }),
+  select: (selection) => set({ selection, multiSelectedIds: [] }),
+  toggleMultiSelect: (instanceId) =>
+    set((st) => {
+      const exists = st.multiSelectedIds.includes(instanceId)
+      return {
+        multiSelectedIds: exists
+          ? st.multiSelectedIds.filter((id) => id !== instanceId)
+          : [...st.multiSelectedIds, instanceId]
+      }
+    }),
+  clearMultiSelect: () => set({ multiSelectedIds: [] }),
   setHoverHarness: (hoverHarnessId, endpoints) =>
     set({ hoverHarnessId, hoverEndpoints: endpoints ?? [] }),
 
@@ -78,5 +113,14 @@ export const useUiStore = create<UiState>((set) => ({
   toggleLibraryManager: () =>
     set((st) => ({ libraryManagerOpen: !st.libraryManagerOpen })),
   toggleReports: () => set((st) => ({ reportsOpen: !st.reportsOpen })),
-  toggleDrc: () => set((st) => ({ drcOpen: !st.drcOpen }))
+  toggleDrc: () => set((st) => ({ drcOpen: !st.drcOpen })),
+  toggleCheatsheet: () => set((st) => ({ cheatsheetOpen: !st.cheatsheetOpen })),
+  toggleCalculator: () => set((st) => ({ calculatorOpen: !st.calculatorOpen })),
+
+  toggleDocs: () => set((st) => ({ docsOpen: !st.docsOpen })),
+
+  setReconciliation: (items) =>
+    set({ showReconciliation: true, reconciliationItems: items }),
+  dismissReconciliation: () =>
+    set({ showReconciliation: false, reconciliationItems: { parts: [], templates: [] } })
 }))

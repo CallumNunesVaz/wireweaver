@@ -1,10 +1,21 @@
-import { useMemo } from 'react'
-import { Pencil, Trash2, Copy, Cable, Cpu, AlertTriangle } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Pencil, Trash2, Copy, Cable, Cpu, AlertTriangle, Plus, X } from 'lucide-react'
 import { useLibraryStore, selectLibraryLike } from '../stores/libraryStore'
 import { useProjectStore } from '../stores/projectStore'
 import { useUiStore } from '../stores/uiStore'
 import { resolveEndpoint, validateHarness } from '../model/derivation'
 import { formatMoney } from '../model/currency'
+import { isConnector, isWire, type AccessoryCategory } from '../model/types'
+
+const ACCESSORY_CATEGORIES: { value: AccessoryCategory; label: string }[] = [
+  { value: 'contact', label: 'Contact' },
+  { value: 'backshell', label: 'Backshell' },
+  { value: 'seal', label: 'Seal' },
+  { value: 'heatshrink', label: 'Heat Shrink' },
+  { value: 'loom', label: 'Loom' },
+  { value: 'label', label: 'Label' },
+  { value: 'other', label: 'Other' }
+]
 
 export function Inspector() {
   const selection = useUiStore((s) => s.selection)
@@ -112,10 +123,18 @@ function HarnessInspector({ id }: { id: string }) {
   const instances = useProjectStore((s) => s.project.deviceInstances)
   const updateHarness = useProjectStore((s) => s.updateHarness)
   const removeHarness = useProjectStore((s) => s.removeHarness)
+  const addAccessory = useProjectStore((s) => s.addHarnessAccessory)
+  const removeAccessory = useProjectStore((s) => s.removeHarnessAccessory)
   const parts = useLibraryStore((s) => s.parts)
   const templates = useLibraryStore((s) => s.templates)
   const openHarnessEditor = useUiStore((s) => s.openHarnessEditor)
   const select = useUiStore((s) => s.select)
+
+  const [showAccessoryModal, setShowAccessoryModal] = useState(false)
+  const [accCategory, setAccCategory] = useState<AccessoryCategory>('contact')
+  const [accPartId, setAccPartId] = useState('')
+  const [accQty, setAccQty] = useState(1)
+  const [accSearch, setAccSearch] = useState('')
 
   const lib = useMemo(
     () => selectLibraryLike({ parts, templates }),
@@ -129,8 +148,34 @@ function HarnessInspector({ id }: { id: string }) {
     return { eps, v }
   }, [harness, lib, instances])
 
+  const connectorWireParts = useMemo(
+    () => parts.filter((p) => isConnector(p) || isWire(p)),
+    [parts]
+  )
+  const filteredPartOptions = useMemo(
+    () => connectorWireParts.filter((p) =>
+      !accSearch.trim() || p.name.toLowerCase().includes(accSearch.trim().toLowerCase()) ||
+      p.internalPartNumber.toLowerCase().includes(accSearch.trim().toLowerCase())
+    ),
+    [connectorWireParts, accSearch]
+  )
+
   if (!harness || !info) return null
   const { eps, v } = info
+
+  const accessories = harness.accessories ?? []
+  const accessoryCount = accessories.reduce((sum, a) => sum + a.quantity, 0)
+
+  const handleAddAccessory = () => {
+    if (!accPartId) return
+    addAccessory(id, { category: accCategory, partId: accPartId, quantity: accQty })
+    setShowAccessoryModal(false)
+    setAccPartId('')
+    setAccQty(1)
+    setAccSearch('')
+  }
+
+  const lookupPart = (partId: string) => parts.find((p) => p.id === partId)
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -181,6 +226,47 @@ function HarnessInspector({ id }: { id: string }) {
           <span className="font-medium capitalize">{v.status}</span>
         </div>
         <Row k="Wires" v={`${v.wireCount} / ${v.maxPins}`} />
+        {accessoryCount > 0 && (
+          <Row k="Accessories" v={`${accessories.length} kinds · ${accessoryCount} total`} />
+        )}
+
+        {/* Accessories section */}
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <label className="ww-label mb-0">Accessories</label>
+            <button
+              className="ww-btn"
+              onClick={() => setShowAccessoryModal(true)}
+              title="Add accessory"
+            >
+              <Plus size={12} /> Add
+            </button>
+          </div>
+          {accessories.length === 0 ? (
+            <div className="text-[11px] text-muted">No accessories added.</div>
+          ) : (
+            <div className="space-y-1">
+              {accessories.map((acc) => {
+                const part = lookupPart(acc.partId)
+                return (
+                  <div key={acc.id} className="flex items-center justify-between rounded border border-edge bg-panelalt px-2 py-1 text-xs">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium">{part?.name ?? 'unknown part'}</div>
+                      <div className="text-[10px] text-muted capitalize">{acc.category} · Qty {acc.quantity}</div>
+                    </div>
+                    <button
+                      className="ml-1 text-muted hover:text-[#e5484d]"
+                      onClick={() => removeAccessory(id, acc.id)}
+                      title="Remove accessory"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
 
         {v.warnings.length > 0 && (
           <div className="space-y-1">
@@ -211,6 +297,85 @@ function HarnessInspector({ id }: { id: string }) {
           <Trash2 size={14} />
         </button>
       </div>
+
+      {/* Add Accessory Modal */}
+      {showAccessoryModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onMouseDown={() => setShowAccessoryModal(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-lg border border-edge bg-panel shadow-2xl"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-edge px-4 py-3">
+              <span className="text-sm font-semibold">Add Accessory</span>
+              <button className="text-muted hover:text-ink" onClick={() => setShowAccessoryModal(false)}>
+                <X size={18} />
+              </button>
+            </div>
+            <div className="space-y-3 p-4">
+              <div>
+                <label className="ww-label">Category</label>
+                <select
+                  className="ww-input"
+                  value={accCategory}
+                  onChange={(e) => setAccCategory(e.target.value as AccessoryCategory)}
+                >
+                  {ACCESSORY_CATEGORIES.map((c) => (
+                    <option key={c.value} value={c.value}>{c.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="ww-label">Part</label>
+                <input
+                  className="ww-input mb-1"
+                  placeholder="Search parts…"
+                  value={accSearch}
+                  onChange={(e) => setAccSearch(e.target.value)}
+                />
+                <div className="max-h-32 space-y-0.5 overflow-y-auto rounded border border-edge">
+                  {filteredPartOptions.slice(0, 20).map((p) => (
+                    <button
+                      key={p.id}
+                      className={`flex w-full items-center gap-2 px-2 py-1 text-left text-xs hover:bg-panelalt ${
+                        accPartId === p.id ? 'bg-accent/20 text-accent' : ''
+                      }`}
+                      onClick={() => setAccPartId(p.id)}
+                    >
+                      <span className="truncate flex-1">{p.name}</span>
+                      <span className="text-[10px] text-muted capitalize">{p.kind}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="ww-label">Quantity</label>
+                <input
+                  type="number"
+                  min={1}
+                  className="ww-input"
+                  value={accQty}
+                  onChange={(e) => setAccQty(Math.max(1, Number(e.target.value) || 1))}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-edge px-4 py-3">
+              <button className="ww-btn" onClick={() => setShowAccessoryModal(false)}>
+                Cancel
+              </button>
+              <button
+                className="ww-btn-primary"
+                onClick={handleAddAccessory}
+                disabled={!accPartId}
+              >
+                Add
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

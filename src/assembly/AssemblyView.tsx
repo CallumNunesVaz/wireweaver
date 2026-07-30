@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ReactFlow,
   Background,
@@ -16,7 +16,7 @@ import {
   type EdgeTypes
 } from '@xyflow/react'
 import { nanoid } from 'nanoid'
-import { LayoutGrid, Cpu, Maximize2, Copy, Trash2, Pencil, Cable, ExternalLink } from 'lucide-react'
+import { LayoutGrid, Cpu, Maximize2, Copy, Trash2, Pencil, Cable, ExternalLink, AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal, AlignStartVertical, AlignCenterVertical, AlignEndVertical } from 'lucide-react'
 import { DeviceNode } from './DeviceNode'
 import { HarnessEdge } from './HarnessEdge'
 import { autoLayout } from './autoLayout'
@@ -26,7 +26,7 @@ import { useLibraryStore, selectLibraryLike } from '../stores/libraryStore'
 import { useProjectStore, coalesceUndo } from '../stores/projectStore'
 import { useUiStore } from '../stores/uiStore'
 import { validateHarness, type HarnessValidation } from '../model/derivation'
-import { isDevice, type HarnessEndpoint } from '../model/types'
+import { isDevice, type DeviceInstance, type HarnessEndpoint } from '../model/types'
 
 const nodeTypes: NodeTypes = { device: DeviceNode }
 const edgeTypes: EdgeTypes = { harness: HarnessEdge }
@@ -50,6 +50,8 @@ export function AssemblyView() {
   const templates = useLibraryStore((s) => s.templates)
 
   const selection = useUiStore((s) => s.selection)
+  const multiSelectedIds = useUiStore((s) => s.multiSelectedIds)
+  const toggleMultiSelect = useUiStore((s) => s.toggleMultiSelect)
   const select = useUiStore((s) => s.select)
   const setHoverHarness = useUiStore((s) => s.setHoverHarness)
   const hoverHarnessId = useUiStore((s) => s.hoverHarnessId)
@@ -61,12 +63,50 @@ export function AssemblyView() {
     instanceId: string
     portId: string
   } | null>(null)
+  const isDragging = useRef(false)
 
   // React Flow drives node motion locally; we resync structure/positions from
   // the store whenever the instance list changes (add/remove/undo/redo).
   const [nodes, setNodes, onNodesChangeRaw] = useNodesState<Node>([])
 
+  // RAF-batched position updates: every drag frame we queue position changes
+  // into a pending buffer and flush them all in one React state update per
+  // animation frame, dramatically reducing re-renders during drag.
+  const pendingNodeChanges = useRef<NodeChange[]>([])
+  const rafId = useRef(0)
+
+  const onNodesChange = useCallback(
+    (changes: NodeChange[]) => {
+      // Non-position changes (remove, select, etc.) must apply immediately.
+      const immediate = changes.filter((c) => c.type !== 'position' || (c.type === 'position' && c.dragging === false))
+      const dragPositions = changes.filter((c) => c.type === 'position' && c.dragging === true)
+
+      if (immediate.length > 0) onNodesChangeRaw(immediate)
+
+      // Flush position updates for drag-end (persist to store).
+      for (const c of immediate) {
+        if (c.type === 'position' && c.position) updatePos(c.id, c.position)
+        else if (c.type === 'remove') removeInstance(c.id)
+      }
+
+      // Batch ongoing-drag position changes into one RAF-tick update.
+      if (dragPositions.length > 0) {
+        pendingNodeChanges.current.push(...dragPositions)
+        if (rafId.current === 0) {
+          rafId.current = requestAnimationFrame(() => {
+            rafId.current = 0
+            const batch = pendingNodeChanges.current
+            pendingNodeChanges.current = []
+            onNodesChangeRaw(batch)
+          })
+        }
+      }
+    },
+    [onNodesChangeRaw, updatePos, removeInstance]
+  )
+
   useEffect(() => {
+    if (isDragging.current) return
     setNodes(
       instances.map((inst) => ({
         id: inst.id,
@@ -76,19 +116,18 @@ export function AssemblyView() {
           instanceId: inst.id,
           connectSource
         },
-        selected: selection?.type === 'instance' && selection.id === inst.id
+        selected:
+          selection?.type === 'instance' &&
+          (selection.id === inst.id || multiSelectedIds.includes(inst.id))
       }))
     )
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [instances, connectSource])
+  }, [instances, connectSource, selection, multiSelectedIds])
 
   const lib = useMemo(
     () => selectLibraryLike({ parts, templates }),
     [parts, templates]
   )
 
-  // Validation is memoized on real model changes only — hover/selection churn
-  // must not re-run it for every harness.
   const validations = useMemo(() => {
     const m = new Map<string, HarnessValidation>()
     for (const h of harnesses) m.set(h.id, validateHarness(lib, instances, h))
@@ -129,31 +168,19 @@ export function AssemblyView() {
     [harnesses, validations, selection, hoverHarnessId]
   )
 
-  const onNodesChange = useCallback(
-    (changes: NodeChange[]) => {
-      onNodesChangeRaw(changes)
-      for (const c of changes) {
-        if (c.type === 'position' && c.dragging === false && c.position) {
-          updatePos(c.id, c.position)
-        } else if (c.type === 'remove') {
-          removeInstance(c.id)
-        }
-      }
-    },
-    [onNodesChangeRaw, updatePos, removeInstance]
-  )
+  const edgesRef = useRef(edges)
+  edgesRef.current = edges
 
   const onEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
-      // When an edge is removed via Delete key, try to find its harness
       for (const c of changes) {
         if (c.type === 'remove') {
-          const edge = edges.find((e) => e.id === c.id)
+          const edge = edgesRef.current.find((e) => e.id === c.id)
           if (edge?.data?.harnessId) removeHarness(edge.data.harnessId as string)
         }
       }
     },
-    [edges, removeHarness]
+    [removeHarness]
   )
 
   const isValidConnection = useCallback(
@@ -270,6 +297,110 @@ export function AssemblyView() {
     const positions = autoLayout(instances, harnesses)
     for (const [id, pos] of Object.entries(positions)) updatePos(id, pos)
   }, [instances, harnesses, updatePos])
+
+  // Alignment helpers: operate on all multi-selected instances + primary selection.
+  const selectedInstanceIds = useMemo(() => {
+    const ids = new Set(multiSelectedIds)
+    if (selection?.type === 'instance') ids.add(selection.id)
+    return [...ids]
+  }, [selection, multiSelectedIds])
+
+  const hasMultiSelect = selectedInstanceIds.length >= 2
+
+  const alignInstances = useCallback(
+    (direction: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') => {
+      const st = useProjectStore.getState()
+      const selInsts = (
+        selectedInstanceIds
+          .map((id) => st.project.deviceInstances.find((i) => i.id === id))
+          .filter((i) => i != null) as DeviceInstance[]
+      )
+      if (selInsts.length < 2) return
+      let target: number
+      switch (direction) {
+        case 'left':
+          target = Math.min(...selInsts.map((i) => i.position.x))
+          st.updateInstancePositions(
+            selInsts.map((i) => ({ id: i.id, position: { x: target, y: i.position.y } }))
+          )
+          break
+        case 'center': {
+          const avg = selInsts.reduce((s, i) => s + i.position.x, 0) / selInsts.length
+          target = Math.round(avg)
+          st.updateInstancePositions(
+            selInsts.map((i) => ({ id: i.id, position: { x: target, y: i.position.y } }))
+          )
+          break
+        }
+        case 'right':
+          target = Math.max(...selInsts.map((i) => i.position.x))
+          st.updateInstancePositions(
+            selInsts.map((i) => ({ id: i.id, position: { x: target, y: i.position.y } }))
+          )
+          break
+        case 'top':
+          target = Math.min(...selInsts.map((i) => i.position.y))
+          st.updateInstancePositions(
+            selInsts.map((i) => ({ id: i.id, position: { x: i.position.x, y: target } }))
+          )
+          break
+        case 'middle': {
+          const avg = selInsts.reduce((s, i) => s + i.position.y, 0) / selInsts.length
+          target = Math.round(avg)
+          st.updateInstancePositions(
+            selInsts.map((i) => ({ id: i.id, position: { x: i.position.x, y: target } }))
+          )
+          break
+        }
+        case 'bottom':
+          target = Math.max(...selInsts.map((i) => i.position.y))
+          st.updateInstancePositions(
+            selInsts.map((i) => ({ id: i.id, position: { x: i.position.x, y: target } }))
+          )
+          break
+      }
+    },
+    [selectedInstanceIds]
+  )
+
+  // Alt+drag duplicate: on drag stop, create a duplicate at the original
+  // position and let the dragged node keep its new position.
+  const altDragSource = useRef<{ id: string; partId: string; x: number; y: number; label: string } | null>(null)
+
+  const onNodeDragStart = useCallback(
+    (e: MouseEvent | TouchEvent, node: Node) => {
+      isDragging.current = true
+      if (e instanceof MouseEvent && e.altKey) {
+        const inst = instances.find((i) => i.id === node.id)
+        if (inst) {
+          altDragSource.current = {
+            id: inst.id,
+            partId: inst.partId,
+            x: inst.position.x,
+            y: inst.position.y,
+            label: inst.label
+          }
+        }
+      } else {
+        altDragSource.current = null
+      }
+    },
+    [instances]
+  )
+
+  const onNodeDragStop = useCallback(
+    () => {
+      isDragging.current = false
+      if (!altDragSource.current) return
+      const src = altDragSource.current
+      altDragSource.current = null
+      const count = instances.filter((i) => i.partId === src.partId).length
+      const part = parts.find((p) => p.id === src.partId)
+      const label = part ? `${part.name} ${count}` : `${src.label} copy`
+      addInstance(src.partId, { x: src.x, y: src.y }, label)
+    },
+    [instances, parts, addInstance]
+  )
 
   // Arrow-key nudge for the selected device; coalesced so holding a key makes
   // one undo step, not dozens.
@@ -403,7 +534,14 @@ export function AssemblyView() {
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         isValidConnection={isValidConnection}
-        onNodeClick={(_, n) => select({ type: 'instance', id: n.id })}
+        onNodeClick={(e, n) => {
+          if (e.ctrlKey || e.metaKey) {
+            toggleMultiSelect(n.id)
+            if (!multiSelectedIds.includes(n.id)) select({ type: 'instance', id: n.id })
+          } else {
+            select({ type: 'instance', id: n.id })
+          }
+        }}
         onEdgeClick={(_, ed) => {
           const hid = ed.data?.harnessId as string
           if (hid) select({ type: 'harness', id: hid })
@@ -414,7 +552,9 @@ export function AssemblyView() {
         }}
         onEdgeMouseEnter={onEdgeMouseEnter}
         onEdgeMouseLeave={() => setHoverHarness(null)}
-        onPaneClick={() => select(null)}
+        onNodeDragStart={onNodeDragStart}
+        onNodeDragStop={onNodeDragStop}
+        onPaneClick={() => { select(null); useUiStore.getState().clearMultiSelect() }}
         onPaneContextMenu={(e) => {
           e.preventDefault()
           setMenu({ x: e.clientX, y: e.clientY, kind: 'pane' })
@@ -442,20 +582,49 @@ export function AssemblyView() {
         connectionRadius={50}
         fitView
         deleteKeyCode={['Backspace', 'Delete']}
+        selectNodesOnDrag={false}
         proOptions={{ hideAttribution: true }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="#2a2f3a" />
+        <Background
+          variant={BackgroundVariant.Dots}
+          gap={18}
+          size={1}
+          color="var(--color-edge)"
+        />
         <MiniMap
           pannable
           zoomable
-          nodeColor="#2f343f"
+          nodeColor="var(--color-edge)"
           maskColor="rgba(0,0,0,0.55)"
-          style={{ background: '#1b1e24' }}
+          style={{ background: 'var(--color-panel)' }}
         />
         <Controls />
       </ReactFlow>
 
       <div className="pointer-events-none absolute left-1/2 top-3 z-10 flex -translate-x-1/2 gap-2">
+        {hasMultiSelect && (
+          <>
+            <button className="ww-btn pointer-events-auto" onClick={() => alignInstances('left')} title="Align left">
+              <AlignStartHorizontal size={15} />
+            </button>
+            <button className="ww-btn pointer-events-auto" onClick={() => alignInstances('center')} title="Align center (horizontal)">
+              <AlignCenterHorizontal size={15} />
+            </button>
+            <button className="ww-btn pointer-events-auto" onClick={() => alignInstances('right')} title="Align right">
+              <AlignEndHorizontal size={15} />
+            </button>
+            <button className="ww-btn pointer-events-auto" onClick={() => alignInstances('top')} title="Align top">
+              <AlignStartVertical size={15} />
+            </button>
+            <button className="ww-btn pointer-events-auto" onClick={() => alignInstances('middle')} title="Align middle (vertical)">
+              <AlignCenterVertical size={15} />
+            </button>
+            <button className="ww-btn pointer-events-auto" onClick={() => alignInstances('bottom')} title="Align bottom">
+              <AlignEndVertical size={15} />
+            </button>
+            <span className="pointer-events-none text-muted text-[11px] self-center px-1">|</span>
+          </>
+        )}
         <button
           className="ww-btn pointer-events-auto"
           onClick={runAutoLayout}

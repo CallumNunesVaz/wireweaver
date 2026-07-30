@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useMemo } from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
 import { Cpu } from 'lucide-react'
 import { useLibraryStore } from '../stores/libraryStore'
@@ -6,6 +6,9 @@ import { useProjectStore } from '../stores/projectStore'
 import { useUiStore } from '../stores/uiStore'
 import { imageUrl } from '../shared/useImage'
 import { isDevice, type DevicePort, type PortSide } from '../model/types'
+
+export const DEVICE_NODE_WIDTH = 180
+export const DEVICE_NODE_HEIGHT = 110
 
 const SIDE_TO_POSITION: Record<PortSide, Position> = {
   left: Position.Left,
@@ -27,6 +30,7 @@ function DeviceNodeImpl({ id, selected, data }: NodeProps) {
   const part = useLibraryStore((s) =>
     instance ? s.parts.find((p) => p.id === instance.partId) : undefined
   )
+  const templates = useLibraryStore((s) => s.templates)
   const hoveredPortId = useUiStore(
     (s) => s.hoverEndpoints.find((e) => e.instanceId === id)?.portId
   )
@@ -39,16 +43,21 @@ function DeviceNodeImpl({ id, selected, data }: NodeProps) {
   const isConnectionTarget =
     nodeData.connectSource != null && nodeData.connectSource.instanceId !== id
 
-  const portSignals = (port: DevicePort): string => {
-    const lib = useLibraryStore.getState()
-    const tpl = lib.templates.find((t) => t.id === port.pinoutTemplateId)
-    if (!tpl || tpl.pins.length === 0) return port.name
-    const connector = tpl.connectorPartId
-      ? lib.parts.find((p) => p.id === tpl.connectorPartId)
-      : undefined
-    const signals = tpl.pins.map((p) => p.signal || '??').join(', ')
-    return connector ? `${connector.name}: ${signals}` : signals
-  }
+  // Compute signal strings per port — only the template data is needed.
+  const portSignals = useMemo(() => {
+    if (ports.length === 0) return new Map<string, string>()
+    const map = new Map<string, string>()
+    for (const port of ports) {
+      const tpl = templates.find((t) => t.id === port.pinoutTemplateId)
+      if (!tpl || tpl.pins.length === 0) {
+        map.set(port.id, port.name)
+        continue
+      }
+      const signals = tpl.pins.map((p) => p.signal || '??').join(', ')
+      map.set(port.id, signals)
+    }
+    return map
+  }, [ports, templates])
 
   const bySide: Record<PortSide, DevicePort[]> = {
     left: [],
@@ -113,7 +122,7 @@ function DeviceNodeImpl({ id, selected, data }: NodeProps) {
               type="source"
               position={pos}
               isConnectableStart
-              title={portSignals(port) || port.name}
+              title={portSignals.get(port.id) || port.name}
               style={{
                 ...style,
                 width: connectTarget ? 12 : 10,
@@ -154,7 +163,7 @@ function DeviceNodeImpl({ id, selected, data }: NodeProps) {
   )
 }
 
-function PortLabel({
+const PortLabel = memo(function PortLabel({
   side,
   frac,
   name,
@@ -195,6 +204,10 @@ function PortLabel({
       {name}
     </span>
   )
-}
+})
 
-export const DeviceNode = memo(DeviceNodeImpl)
+export const DeviceNode = memo(DeviceNodeImpl, (prev, next) =>
+  prev.id === next.id &&
+  prev.selected === next.selected &&
+  (prev.data as DeviceNodeData)?.connectSource === (next.data as DeviceNodeData)?.connectSource
+)

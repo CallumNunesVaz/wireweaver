@@ -16,18 +16,21 @@ import {
   Trash2,
   Copy,
   Filter,
-  RotateCcw
+  RotateCcw,
+  FolderSync
 } from 'lucide-react'
 import { nanoid } from 'nanoid'
+import { Virtuoso } from 'react-virtuoso'
 import { useLibraryStore } from '../stores/libraryStore'
 import { useProjectStore } from '../stores/projectStore'
 import { useUiStore } from '../stores/uiStore'
 import { findPartReferences, findTemplateReferences } from '../model/references'
+import { fuzzySearch } from './FuzzySearch'
 import { toast } from '../shared/toast'
 import { imageUrl, fileToDataUrl, makeThumbDataUrl } from '../shared/useImage'
 import { CURRENCIES } from '../model/currency'
 import { ContextMenu } from '../shared/ContextMenu'
-import type { Part, PartKind, PartType, PinoutTemplate, HarnessEndpoint, WirePart } from '../model/types'
+import type { Part, PartKind, PartType, PinoutTemplate, HarnessEndpoint, WirePart, ConnectorGender } from '../model/types'
 import { isDevice, isConnector, isWire, endIndex } from '../model/types'
 
 // Reuse shared form fields from PartEditor
@@ -51,6 +54,8 @@ const PART_TYPES: PartType[] = ['COTS', 'MOTS', 'Custom']
 export function LibraryManager() {
   const parts = useLibraryStore((s) => s.parts)
   const templates = useLibraryStore((s) => s.templates)
+  const libraryPath = useLibraryStore((s) => s.libraryPath)
+  const relocateLibrary = useLibraryStore((s) => s.relocateLibrary)
   const upsertPart = useLibraryStore((s) => s.upsertPart)
   const removePart = useLibraryStore((s) => s.removePart)
   const upsertTemplate = useLibraryStore((s) => s.upsertTemplate)
@@ -73,22 +78,18 @@ export function LibraryManager() {
   })
   const [wireFilters, setWireFilters] = useState<Record<string, string>>({})
   const [showWireFilters, setShowWireFilters] = useState(false)
+  const [pinCountRange, setPinCountRange] = useState('')
+  const [connectorGender, setConnectorGender] = useState<ConnectorGender | ''>('')
   const [showSelect, setShowSelect] = useState(false)
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const [menu, setMenu] = useState<{ x: number; y: number; selection: LibraryItem } | null>(null)
   const [editorDraft, setEditorDraft] = useState<Part | null>(null)
   const [templateDraft, setTemplateDraft] = useState<PinoutTemplate | null>(null)
 
-  const q = search.trim().toLowerCase()
-  const matches = (text: string) => !q || text.toLowerCase().includes(q)
-
-  // Filter parts
+  // Filter parts with fuzzy search
   const filteredParts = useMemo(() => {
-    return parts.filter((p) => {
-      if (!matches(`${p.name} ${p.internalPartNumber} ${p.manufacturerPartNumber}`)) return false
-      return true
-    })
-  }, [parts, q])
+    return fuzzySearch(parts, search)
+  }, [parts, search])
 
   const devices = filteredParts.filter(isDevice)
   const connectors = filteredParts.filter(isConnector)
@@ -125,7 +126,7 @@ export function LibraryManager() {
     for (const [key, value] of Object.entries(wireFilters)) {
       if (!value) continue
       result = result.filter((w) => {
-        const v = (w as Record<string, unknown>)[key]
+        const v = (w as unknown as Record<string, unknown>)[key]
         if (key === 'shield') {
           return String(!!v) === value
         }
@@ -136,22 +137,34 @@ export function LibraryManager() {
     return result
   }, [filteredParts, wireFilters])
 
+  const filteredConnectors = useMemo(() => {
+    return connectors.filter((item) => {
+      if (pinCountRange) {
+        if ((item as { positions?: number }).positions !== Number(pinCountRange)) return false
+      }
+      if (connectorGender) {
+        if ((item as { gender?: string }).gender !== connectorGender) return false
+      }
+      return true
+    })
+  }, [connectors, pinCountRange, connectorGender])
+
   // Filter templates
   const filteredTemplates = useMemo(
-    () => templates.filter((t) => matches(t.name)),
-    [templates, q]
+    () => templates.filter((t) => !search.trim() || t.name.toLowerCase().includes(search.trim().toLowerCase())),
+    [templates, search]
   )
 
   // Filter harnesses
   const filteredHarnesses = useMemo(
-    () => projectHarnesses.filter((h) => matches(h.name)),
-    [projectHarnesses, q]
+    () => projectHarnesses.filter((h) => !search.trim() || h.name.toLowerCase().includes(search.trim().toLowerCase())),
+    [projectHarnesses, search]
   )
 
   // Build section visibility
   const sections = [
     { key: 'device', label: 'Devices', icon: Cpu, items: devices, filterKey: 'device' as const },
-    { key: 'connector', label: 'Connectors', icon: Plug, items: connectors, filterKey: 'connector' as const },
+    { key: 'connector', label: 'Connectors', icon: Plug, items: filteredConnectors, filterKey: 'connector' as const },
     { key: 'wire', label: 'Wires', icon: Cable, items: wires, filterKey: 'wire' as const },
     { key: 'template', label: 'Templates', icon: ListTree, items: filteredTemplates, filterKey: 'template' as const },
     { key: 'harness', label: 'Harnesses', icon: Cable, items: filteredHarnesses, filterKey: 'harness' as const }
@@ -249,6 +262,28 @@ export function LibraryManager() {
     toast(`Imported ${addedParts} part(s) and ${addedTemplates} template(s).`, 'success')
   }, [])
 
+  // Database folder management
+  const handleChangeDb = useCallback(async () => {
+    const path = await window.ww.library.choosePath()
+    if (!path) return
+    const oldPath = libraryPath
+    // If old path is default and has content, offer to relocate.
+    const needsRelocate = oldPath && oldPath !== path
+    if (needsRelocate) {
+      const move = window.confirm(
+        `Copy existing library data from:\n${oldPath}\n\nto:\n${path}\n\nClick OK to copy, Cancel to switch without copying.`
+      )
+      if (move) {
+        await relocateLibrary(path)
+      } else {
+        await useLibraryStore.getState().setLibraryPath(path)
+      }
+    } else {
+      await useLibraryStore.getState().setLibraryPath(path)
+    }
+    toast(`Library database: ${path}`, 'success')
+  }, [libraryPath, relocateLibrary])
+
   // Save edited part
   const savePart = () => {
     if (!editorDraft) return
@@ -289,8 +324,16 @@ export function LibraryManager() {
         <span className="text-sm font-semibold">Library Manager</span>
         <span className="text-[11px] text-muted ml-2">
           {parts.length} parts · {templates.length} templates · {projectHarnesses.length} harnesses
+          {libraryPath && (
+            <span className="ml-3 text-[10px] opacity-60 truncate max-w-[300px] inline-block align-middle" title={libraryPath}>
+              {libraryPath}
+            </span>
+          )}
         </span>
         <div className="ml-auto flex items-center gap-1">
+          <button className="ww-btn" onClick={handleChangeDb} title="Change library database folder…">
+            <FolderSync size={14} /> DB
+          </button>
           <button className="ww-btn" onClick={handleImport} title="Import library (.wwlib)">
             <Upload size={14} /> Import
           </button>
@@ -316,24 +359,66 @@ export function LibraryManager() {
       </div>
 
       {/* Filter pills */}
-      <div className="flex items-center gap-1 border-b border-edge px-3 py-1.5 flex-wrap">
-        {[
-          { key: 'device', label: 'Devices' },
-          { key: 'connector', label: 'Connectors' },
-          { key: 'wire', label: 'Wires' },
-          { key: 'template', label: 'Templates' },
-          { key: 'harness', label: 'Harnesses' }
-        ].map(({ key, label }) => (
-          <button
-            key={key}
-            className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
-              filters[key] ? 'bg-accent text-white' : 'bg-panelalt text-muted hover:text-ink'
-            }`}
-            onClick={() => setFilters((f) => ({ ...f, [key]: !f[key] }))}
-          >
-            {label}
-          </button>
-        ))}
+      <div className="border-b border-edge">
+        <div className="flex items-center gap-1 px-3 py-1.5 flex-wrap">
+          {[
+            { key: 'device', label: 'Devices' },
+            { key: 'connector', label: 'Connectors' },
+            { key: 'wire', label: 'Wires' },
+            { key: 'template', label: 'Templates' },
+            { key: 'harness', label: 'Harnesses' }
+          ].map(({ key, label }) => (
+            <button
+              key={key}
+              className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
+                filters[key] ? 'bg-accent text-white' : 'bg-panelalt text-muted hover:text-ink'
+              }`}
+              onClick={() => setFilters((f) => ({ ...f, [key]: !f[key] }))}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Additional filter pills - collapsible */}
+        {showWireFilters && (
+          <div className="border-t border-edge/60 px-3 py-1.5">
+            <div className="text-[10px] uppercase text-muted mb-1">Advanced Filters</div>
+            {filters.wire && (
+              <WireFilterBar
+                options={wireFilterOptions}
+                filters={wireFilters}
+                setFilters={setWireFilters}
+              />
+            )}
+            {filters.connector && (
+              <div className="grid grid-cols-2 gap-1 mt-1">
+                <select
+                  className="ww-input h-6 text-[10px] py-0"
+                  value={pinCountRange ?? ''}
+                  onChange={(e) => setPinCountRange(e.target.value)}
+                  title="Pin count"
+                >
+                  <option value="">Pin count</option>
+                  {[2, 3, 4, 6, 8, 10, 12, 16, 20, 24, 32, 48].map((n) => (
+                    <option key={n} value={String(n)}>{n}-pos</option>
+                  ))}
+                </select>
+                <select
+                  className="ww-input h-6 text-[10px] py-0"
+                  value={connectorGender ?? ''}
+                  onChange={(e) => setConnectorGender(e.target.value as ConnectorGender | '')}
+                  title="Gender"
+                >
+                  <option value="">Gender</option>
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                  <option value="hermaphroditic">Hermaphroditic</option>
+                </select>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Body */}
@@ -376,10 +461,11 @@ export function LibraryManager() {
             </div>
           )}
 
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="min-h-0 flex-1">
             {sections.map(({ key, label, icon: Icon, items, filterKey }) => {
               if (!filters[filterKey]) return null
               const isOpen = !collapsed[key]
+              const displayItems = items
               return (
                 <section key={key} className="border-b border-edge/60">
                   <div className="flex items-center gap-1 px-2 py-1.5">
@@ -434,12 +520,12 @@ export function LibraryManager() {
                     )}
                   </div>
 
-                  {isOpen && (
-                    <div className="space-y-0.5 px-2 pb-2">
-                      {items.length === 0 && (
-                        <div className="px-1 py-2 text-[11px] text-muted">None.</div>
-                      )}
-                      {items.map((item) => {
+                  {isOpen && displayItems.length > 0 && (
+                    <Virtuoso
+                      style={{ height: Math.min(displayItems.length * 52, 400) }}
+                      totalCount={displayItems.length}
+                      itemContent={(index) => {
+                        const item = displayItems[index]
                         const itemId = 'id' in item ? item.id : ''
                         const isSelected = selection?.id === itemId
                         const isChecked = checked.has(itemId)
@@ -476,8 +562,7 @@ export function LibraryManager() {
 
                         return (
                           <div
-                            key={itemId}
-                            className={`flex cursor-pointer items-center gap-2 rounded border px-2 py-1.5 text-left text-xs hover:border-accent ${
+                            className={`flex cursor-pointer items-center gap-2 rounded border p-1 my-0.5 mx-1 text-left text-xs hover:border-accent ${
                               isSelected ? 'border-accent bg-panelalt' : 'border-edge bg-panelalt'
                             }`}
                             onClick={() => {
@@ -513,8 +598,11 @@ export function LibraryManager() {
                             </div>
                           </div>
                         )
-                      })}
-                    </div>
+                      }}
+                    />
+                  )}
+                  {isOpen && displayItems.length === 0 && (
+                    <div className="px-1 py-2 text-[11px] text-muted">None.</div>
                   )}
                 </section>
               )
@@ -572,6 +660,7 @@ export function LibraryManager() {
                 setSelection({ kind: 'part', id: copy.id })
               }}
               templates={templates}
+              connectorList={connectors.map((c) => ({ id: c.id, name: c.name }))}
             />
           )}
         </div>
@@ -648,7 +737,8 @@ function PartDetail({
   onSave,
   onDelete,
   onDuplicate,
-  templates
+  templates,
+  connectorList
 }: {
   draft: Part | null
   setDraft: (d: Part) => void
@@ -656,6 +746,7 @@ function PartDetail({
   onDelete: () => void
   onDuplicate: () => void
   templates: { id: string; name: string }[]
+  connectorList: { id: string; name: string }[]
 }) {
   if (!draft) return null
   const patch = (p: Partial<Part>) => setDraft({ ...draft, ...p } as Part)
@@ -760,7 +851,7 @@ function PartDetail({
         </div>
 
         <div className="mt-4 border-t border-edge pt-4">
-          {draft.kind === 'connector' && <ConnectorFields part={draft as import('../model/types').ConnectorPart} patch={patch as (p: Partial<import('../model/types').ConnectorPart>) => void} connectors={connectors.map((c) => ({ id: c.id, name: c.name }))} />}
+          {draft.kind === 'connector' && <ConnectorFields part={draft as import('../model/types').ConnectorPart} patch={patch as (p: Partial<import('../model/types').ConnectorPart>) => void} connectors={connectorList} />}
           {draft.kind === 'wire' && <WireFields part={draft as import('../model/types').WirePart} patch={patch as (p: Partial<import('../model/types').WirePart>) => void} />}
           {draft.kind === 'device' && (
             <PortEditor

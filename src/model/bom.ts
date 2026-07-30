@@ -55,14 +55,55 @@ export function buildBom(project: Project, lib: LibraryLike): BomRow[] {
     }
     // Wire parts assigned to individual wires.
     for (const w of h.wires) if (w.wirePartId) bump(w.wirePartId)
+
+    // Accessories (Feature 5)
+    for (const acc of h.accessories ?? []) {
+      const c = counts.get(acc.partId) ?? { qty: 0 }
+      c.qty += acc.quantity
+      counts.set(acc.partId, c)
+    }
+
+    // Splices (Feature 6)
+    for (const splice of h.splices ?? []) {
+      if (splice.wirePartId) {
+        bump(splice.wirePartId)
+      } else {
+        // Generic splice counts as 1 connector part equivalent
+        const genericId = '__generic_splice__'
+        const c = counts.get(genericId) ?? { qty: 0 }
+        c.qty += 1
+        counts.set(genericId, c)
+      }
+    }
+  }
+
+  const accessoryPartIds = new Set<string>()
+  for (const h of project.harnesses) {
+    for (const acc of h.accessories ?? []) accessoryPartIds.add(acc.partId)
   }
 
   const rows: BomRow[] = []
   for (const [partId, { qty }] of counts) {
+    if (partId === '__generic_splice__') {
+      rows.push({
+        category: 'accessory',
+        name: 'Generic Splice',
+        ipn: '—',
+        manufacturer: '—',
+        mpn: '—',
+        quantity: qty
+      })
+      continue
+    }
     const part = lib.parts[partId]
     if (!part) continue
+    const category = accessoryPartIds.has(partId)
+      ? 'accessory'
+      : part.kind === 'connector'
+        ? 'connector'
+        : part.kind
     rows.push({
-      category: part.kind,
+      category,
       name: part.name,
       ipn: part.internalPartNumber,
       manufacturer: part.manufacturer,
@@ -127,6 +168,10 @@ export async function exportBomCsv(
   project: Project,
   lib: LibraryLike
 ): Promise<{ canceled: boolean; path?: string }> {
-  const csv = toCsv(buildBom(project, lib))
-  return window.ww.bom.export(csv, `${project.name || 'wireweaver'}-bom.csv`)
+  try {
+    const csv = toCsv(buildBom(project, lib))
+    return window.ww.bom.export(csv, `${project.name || 'wireweaver'}-bom.csv`)
+  } catch {
+    return { canceled: true }
+  }
 }

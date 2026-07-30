@@ -15,7 +15,11 @@ import {
   FileText,
   ShieldCheck,
   Clock,
-  BookOpen
+  BookOpen,
+  Sun,
+  Moon,
+  Calculator,
+  HelpCircle
 } from 'lucide-react'
 import { ErrorBoundary } from '../shared/ErrorBoundary'
 import { Toaster, toast } from '../shared/toast'
@@ -51,6 +55,18 @@ const ReportsModal = lazy(() =>
 const DrcPanel = lazy(() =>
   import('../reports/DrcPanel').then((m) => ({ default: m.DrcPanel }))
 )
+const ShortcutCheatsheet = lazy(() =>
+  import('../shared/ShortcutCheatsheet').then((m) => ({ default: m.ShortcutCheatsheet }))
+)
+const ReconciliationDialog = lazy(() =>
+  import('../library/ReconciliationDialog').then((m) => ({ default: m.ReconciliationDialog }))
+)
+const CalculatorModal = lazy(() =>
+  import('../shared/CalculatorModal').then((m) => ({ default: m.CalculatorModal }))
+)
+const DocumentationDialog = lazy(() =>
+  import('../shared/DocumentationDialog').then((m) => ({ default: m.DocumentationDialog }))
+)
 
 function errMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
@@ -84,6 +100,38 @@ export default function App() {
   const toggleReports = useUiStore((s) => s.toggleReports)
   const drcOpen = useUiStore((s) => s.drcOpen)
   const toggleDrc = useUiStore((s) => s.toggleDrc)
+  const cheatsheetOpen = useUiStore((s) => s.cheatsheetOpen)
+  const toggleCheatsheet = useUiStore((s) => s.toggleCheatsheet)
+  const calculatorOpen = useUiStore((s) => s.calculatorOpen)
+  const toggleCalculator = useUiStore((s) => s.toggleCalculator)
+  const docsOpen = useUiStore((s) => s.docsOpen)
+  const toggleDocs = useUiStore((s) => s.toggleDocs)
+  const showReconciliation = useUiStore((s) => s.showReconciliation)
+
+  // Theme
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('ww-theme')
+      if (stored === 'light' || stored === 'dark') return stored
+    }
+    return 'dark'
+  })
+
+  const toggleTheme = useCallback(() => {
+    setTheme((prev) => {
+      const next = prev === 'dark' ? 'light' : 'dark'
+      localStorage.setItem('ww-theme', next)
+      return next
+    })
+  }, [])
+
+  useEffect(() => {
+    if (theme === 'light') {
+      document.documentElement.setAttribute('data-theme', 'light')
+    } else {
+      document.documentElement.removeAttribute('data-theme')
+    }
+  }, [theme])
 
   // Live DRC badge: recompute on any project/library change.
   const libParts = useLibraryStore((s) => s.parts)
@@ -105,8 +153,12 @@ export default function App() {
   const [recentOpen, setRecentOpen] = useState(false)
 
   useEffect(() => {
+    let cancelled = false
     loadLibrary()
-    window.ww.recent.get().then(setRecentProjects)
+    window.ww.recent.get().then((list) => {
+      if (!cancelled) setRecentProjects(list)
+    })
+    return () => { cancelled = true }
   }, [loadLibrary])
 
   useEffect(() => {
@@ -167,17 +219,11 @@ export default function App() {
     (data: Project, path: string) => {
       loadProject(data, path)
       useProjectStore.temporal.getState().clear()
-      // Merge snapshot-only parts/templates into the library so a project from
-      // another machine renders fully.
+      // Show reconciliation dialog instead of silently importing
       const lib = useLibraryStore.getState()
       const missing = missingFromLibrary(data, lib.parts, lib.templates)
       if (missing.parts.length > 0 || missing.templates.length > 0) {
-        for (const t of missing.templates) lib.upsertTemplate(t)
-        for (const p of missing.parts) lib.upsertPart(p)
-        toast(
-          `Imported ${missing.parts.length} part(s) and ${missing.templates.length} template(s) from the project's snapshot.`,
-          'info'
-        )
+        useUiStore.getState().setReconciliation(missing)
       }
       window.ww.recent.add({ name: data.name, path }).then(setRecentProjects)
     },
@@ -233,41 +279,97 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey
-      if (!mod) return
-      const key = e.key.toLowerCase()
-      if (key === 's' && e.shiftKey) {
+      if (mod) {
+        const key = e.key.toLowerCase()
+        if (key === 's' && e.shiftKey) {
+          e.preventDefault()
+          handleSave(true)
+        } else if (key === 's') {
+          e.preventDefault()
+          handleSave()
+        } else if (key === 'o') {
+          e.preventDefault()
+          handleOpen()
+        } else if (key === 'n') {
+          e.preventDefault()
+          handleNew()
+        } else if (key === 'f') {
+          e.preventDefault()
+          focusLibrarySearch()
+        } else if (key === 'd') {
+          e.preventDefault()
+          const sel = useUiStore.getState().selection
+          if (sel?.type === 'instance') {
+            duplicateInstance(sel.id)
+          } else if (sel?.type === 'harness') {
+            useProjectStore.getState().duplicateHarness(sel.id)
+          }
+        } else if (key === 'l') {
+          e.preventDefault()
+          toggleLibraryManager()
+        } else if (key === 'h') {
+          e.preventDefault()
+          toggleLibrary()
+        } else if (key === 'b') {
+          e.preventDefault()
+          handleBom()
+        } else if (key === 'r') {
+          e.preventDefault()
+          toggleReports()
+        } else if (key === 'e') {
+          e.preventDefault()
+          const sel = useUiStore.getState().selection
+          if (sel?.type === 'harness') useUiStore.getState().openHarnessEditor(sel.id)
+        } else if (key === 'z' && !e.shiftKey) {
+          e.preventDefault()
+          doUndo()
+        } else if ((key === 'z' && e.shiftKey) || key === 'y') {
+          e.preventDefault()
+          doRedo()
+        }
+        return
+      }
+
+      // F1 opens documentation
+      if (e.key === 'F1') {
         e.preventDefault()
-        handleSave(true)
-      } else if (key === 's') {
-        e.preventDefault()
-        handleSave()
-      } else if (key === 'o') {
-        e.preventDefault()
-        handleOpen()
-      } else if (key === 'n') {
-        e.preventDefault()
-        handleNew()
-      } else if (key === 'f') {
-        e.preventDefault()
-        focusLibrarySearch()
-      } else if (key === 'd') {
+        toggleDocs()
+        return
+      }
+
+      // '?' key opens cheatsheet (only when no input focused)
+      if (e.key === '?' && !e.shiftKey) {
+        const tag = (e.target as HTMLElement)?.tagName
+        if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
+          e.preventDefault()
+          toggleCheatsheet()
+        }
+      }
+
+      // F2 to rename selected device instance or harness
+      if (e.key === 'F2') {
         e.preventDefault()
         const sel = useUiStore.getState().selection
-        if (sel?.type === 'instance') duplicateInstance(sel.id)
-      } else if (key === 'l') {
-        e.preventDefault()
-        toggleLibraryManager()
-      } else if (key === 'z' && !e.shiftKey) {
-        e.preventDefault()
-        doUndo()
-      } else if ((key === 'z' && e.shiftKey) || key === 'y') {
-        e.preventDefault()
-        doRedo()
+        if (!sel) return
+        const st = useProjectStore.getState()
+        if (sel.type === 'instance') {
+          const inst = st.project.deviceInstances.find((i) => i.id === sel.id)
+          if (inst) {
+            const label = window.prompt('Rename:', inst.label)
+            if (label && label.trim()) st.setInstanceLabel(sel.id, label.trim())
+          }
+        } else if (sel.type === 'harness') {
+          const h = st.project.harnesses.find((x) => x.id === sel.id)
+          if (h) {
+            const name = window.prompt('Rename harness:', h.name)
+            if (name && name.trim()) st.updateHarness(sel.id, { name: name.trim() })
+          }
+        }
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [handleSave, handleOpen, handleNew, focusLibrarySearch, doUndo, doRedo, duplicateInstance, toggleLibraryManager])
+  }, [handleSave, handleOpen, handleNew, focusLibrarySearch, doUndo, doRedo, duplicateInstance, toggleLibraryManager, toggleCheatsheet, toggleLibrary, toggleReports, handleBom, toggleDocs])
 
   return (
     <ReactFlowProvider>
@@ -284,6 +386,13 @@ export default function App() {
           </div>
 
           <div className="ml-auto flex items-center gap-1">
+            <button
+              className="ww-btn"
+              onClick={toggleTheme}
+              title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+            >
+              {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
             <button className="ww-btn" onClick={() => toggleLibrary()} title="Toggle library">
               {libraryCollapsed ? (
                 <PanelLeftOpen size={16} />
@@ -333,6 +442,12 @@ export default function App() {
             </button>
             <button className="ww-btn" onClick={toggleLibraryManager} title="Library Manager (Ctrl+L)">
               <BookOpen size={16} /> Library
+            </button>
+            <button className="ww-btn" onClick={toggleCalculator} title="Voltage Drop Calculator">
+              <Calculator size={16} /> Calc
+            </button>
+            <button className="ww-btn" onClick={toggleDocs} title="Documentation (F1)">
+              <HelpCircle size={16} /> Help
             </button>
             <button className="ww-btn" onClick={handleNew} title="New project (Ctrl+N)">
               <FilePlus2 size={16} /> New
@@ -430,6 +545,18 @@ export default function App() {
           <ErrorBoundary>
             <DrcPanel />
           </ErrorBoundary>
+        )}
+        {cheatsheetOpen && (
+          <ShortcutCheatsheet onClose={toggleCheatsheet} />
+        )}
+        {showReconciliation && (
+          <ReconciliationDialog />
+        )}
+        {calculatorOpen && (
+          <CalculatorModal onClose={toggleCalculator} />
+        )}
+        {docsOpen && (
+          <DocumentationDialog onClose={toggleDocs} />
         )}
       </Suspense>
 

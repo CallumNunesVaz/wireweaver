@@ -1,0 +1,371 @@
+{
+  "parts": [
+    {
+      "id": "ecu-haltech-elite2500",
+      "kind": "device",
+      "name": "Haltech Elite 2500",
+      "type": "COTS",
+      "internalPartNumber": "WW-ECU-ecu-haltech-elite2500",
+      "manufacturer": "Haltech",
+      "manufacturerPartNumber": "HT-151201",
+      "supplier": "Haltech",
+      "supplierPartNumber": "HT-151201",
+      "cost": {
+        "amount": 1200,
+        "currency": "USD"
+      },
+      "weightGrams": 350,
+      "notes": "Haltech Elite 2500 racing ECU/PDM. Deutsch DT connector ecosystem.",
+      "ports": [
+        {
+          "id": "ht-inj",
+          "name": "Injector Outputs",
+          "pinoutTemplateId": "ecu-tpl-injector-4p",
+          "side": "right"
+        },
+        {
+          "id": "ht-ign",
+          "name": "Ignition Outputs",
+          "pinoutTemplateId": "ecu-tpl-ignition-6p",
+          "side": "right"
+        },
+        {
+          "id": "ht-sens",
+          "name": "Sensor Inputs",
+          "pinoutTemplateId": "ecu-tpl-sensor-8p",
+          "side": "left"
+        },
+        {
+          "id": "ht-can",
+          "name": "CAN Bus",
+          "pinoutTemplateId": "ecu-tpl-can-4p",
+          "side": "left"
+        },
+        {
+          "id": "ht-pwr",
+          "name": "Power",
+          "pinoutTemplateId": "ecu-tpl-power-2p",
+          "side": "bottom"
+        }
+      ]
+    },
+    {
+      "id": "ecu-motec-m150",
+      "kind": "device",
+      "name": "Motec M150",
+      "type": "COTS",
+      "internalPartNumber": "WW-ECU-ecu-motec-m150",
+      "manufacturer": "Motec",
+      "manufacturerPartNumber": "M150",
+      "supplier": "Motec",
+      "supplierPartNumber": "M150",
+      "cost": {
+        "amount": 1200,
+        "currency": "USD"
+      },
+      "weightGrams": 350,
+      "notes": "Motec M150 racing ECU/PDM. Deutsch DT connector ecosystem.",
+      "ports": [
+        {
+          "id": "mt-inj",
+          "name": "Injector Outputs",
+          "pinoutTemplateId": "ecu-tpl-injector-4p",
+          "side": "right"
+        },
+        {
+          "id": "mt-ign",
+          "name": "Ignition Outputs",
+          "pinoutTemplateId": "ecu-tpl-ignition-6p",
+          "side": "right"
+        },
+        {
+          "id": "mt-sens",
+          "name": "Sensor Inputs",
+          "pinoutTemplateId": "ecu-tpl-sensor-8p",
+          "side": "left"
+        },
+        {
+          "id": "mt-can",
+          "name": "CAN Bus",
+          "pinoutTemplateId": "ecu-tpl-can-4p",
+          "side": "left"
+        },
+        {
+          "id": "mt-pwr",
+          "name": "Power",
+          "pinoutTemplateId": "ecu-tpl-power-2p",
+          "side": "bottom"
+        }
+      ]
+    },
+    {
+      "id": "ecu-link-g4x-xtremex",
+      "kind": "device",
+      "name": "Link G4X XtremeX",
+      "type": "COTS",
+      "internalPartNumber": "WW-ECU-ecu-link-g4x-xtremex",
+      "manufacturer": "Link ECU",
+      "manufacturerPartNumber": "G4X-XTREMEX",
+      "supplier": "Link ECU",
+      "supplierPartNumber": "G4X-XTREMEX",
+      "cost": {
+        "amount": 1200,
+        "currency": "USD"
+      },
+      "weightGrams": 350,
+      "notes": "Link G4X XtremeX racing ECU/PDM. Deutsch DT connector ecosystem.",
+      "ports": [
+        {
+          "id": "lk-inj",
+          "name": "Injector Outputs",
+          "pinoutTemplateId": "ecu-tpl-injector-4p",
+          "side": "right"
+        },
+        {
+          "id": "lk-ign",
+          "name": "Ignition Outputs",
+          "pinoutTemplateId": "ecu-tpl-ignition-6p",
+          "side": "right"
+        },
+        {
+          "id": "lk-sens",
+          "name": "Sensor Inputs",
+          "pinoutTemplateId": "ecu-tpl-sensor-8p",
+          "side": "left"
+        },
+        {
+          "id": "lk-can",
+          "name": "CAN Bus",
+          "pinoutTemplateId": "ecu-tpl-can-4p",
+          "side": "left"
+        },
+        {
+          "id": "lk-pwr",
+          "name": "Power",
+          "pinoutTemplateId": "ecu-tpl-power-2p",
+          "side": "bottom"
+        }
+      ]
+    },
+    {
+      "id": "ecu-ecumaster-emu-black",
+      "kind": "device",
+      "name": "ECUMaster EMU Black",
+      "type": "COTS",
+      "internalPartNumber": "WW-ECU-ecu-ecumaster-emu-black",
+      "manufacturer": "ECUMaster",
+      "manufacturerPartNumber": "EMU-BLACK",
+      "supplier": "ECUMaster",
+      "supplierPartNumber": "EMU-BLACK",
+      "cost": {
+        "amount": 1200,
+        "currency": "USD"
+      },
+      "weightGrams": 350,
+      "notes": "ECUMaster EMU Black racing ECU/PDM. Deutsch DT connector ecosystem.",
+      "ports": [
+        {
+          "id": "em-inj",
+          "name": "Injector Outputs",
+          "pinoutTemplateId": "ecu-tpl-injector-4p",
+          "side": "right"
+        },
+        {
+          "id": "em-ign",
+          "name": "Ignition Outputs",
+          "pinoutTemplateId": "ecu-tpl-ignition-6p",
+          "side": "right"
+        },
+        {
+          "id": "em-sens",
+          "name": "Sensor Inputs",
+          "pinoutTemplateId": "ecu-tpl-sensor-8p",
+          "side": "left"
+        },
+        {
+          "id": "em-can",
+          "name": "CAN Bus",
+          "pinoutTemplateId": "ecu-tpl-can-4p",
+          "side": "left"
+        },
+        {
+          "id": "em-pwr",
+          "name": "Power",
+          "pinoutTemplateId": "ecu-tpl-power-2p",
+          "side": "bottom"
+        }
+      ]
+    }
+  ],
+  "templates": [
+    {
+      "id": "ecu-tpl-injector-4p",
+      "name": "Injector Outputs 4-pos",
+      "connectorPartId": "deutsch-dt-rec-04p",
+      "pins": [
+        {
+          "position": 1,
+          "signal": "INJ1",
+          "signalClass": "power",
+          "maxCurrentAmps": 7
+        },
+        {
+          "position": 2,
+          "signal": "INJ2",
+          "signalClass": "power",
+          "maxCurrentAmps": 7
+        },
+        {
+          "position": 3,
+          "signal": "INJ3",
+          "signalClass": "power",
+          "maxCurrentAmps": 7
+        },
+        {
+          "position": 4,
+          "signal": "INJ4",
+          "signalClass": "power",
+          "maxCurrentAmps": 7
+        }
+      ]
+    },
+    {
+      "id": "ecu-tpl-ignition-6p",
+      "name": "Ignition Outputs 6-pos",
+      "connectorPartId": "deutsch-dt-rec-06p",
+      "pins": [
+        {
+          "position": 1,
+          "signal": "IGN1",
+          "signalClass": "power",
+          "maxCurrentAmps": 7
+        },
+        {
+          "position": 2,
+          "signal": "IGN2",
+          "signalClass": "power",
+          "maxCurrentAmps": 7
+        },
+        {
+          "position": 3,
+          "signal": "IGN3",
+          "signalClass": "power",
+          "maxCurrentAmps": 7
+        },
+        {
+          "position": 4,
+          "signal": "IGN4",
+          "signalClass": "power",
+          "maxCurrentAmps": 7
+        },
+        {
+          "position": 5,
+          "signal": "IGN5",
+          "signalClass": "power",
+          "maxCurrentAmps": 7
+        },
+        {
+          "position": 6,
+          "signal": "IGN6",
+          "signalClass": "power",
+          "maxCurrentAmps": 7
+        }
+      ]
+    },
+    {
+      "id": "ecu-tpl-sensor-8p",
+      "name": "Sensor Inputs 8-pos",
+      "connectorPartId": "deutsch-dt-rec-08p",
+      "pins": [
+        {
+          "position": 1,
+          "signal": "AN1",
+          "signalClass": "data"
+        },
+        {
+          "position": 2,
+          "signal": "AN2",
+          "signalClass": "data"
+        },
+        {
+          "position": 3,
+          "signal": "TEMP1",
+          "signalClass": "data"
+        },
+        {
+          "position": 4,
+          "signal": "TEMP2",
+          "signalClass": "data"
+        },
+        {
+          "position": 5,
+          "signal": "KNOCK1",
+          "signalClass": "data"
+        },
+        {
+          "position": 6,
+          "signal": "KNOCK2",
+          "signalClass": "data"
+        },
+        {
+          "position": 7,
+          "signal": "+5V",
+          "signalClass": "power"
+        },
+        {
+          "position": 8,
+          "signal": "GND",
+          "signalClass": "ground"
+        }
+      ]
+    },
+    {
+      "id": "ecu-tpl-can-4p",
+      "name": "CAN Bus 4-pos",
+      "connectorPartId": "deutsch-dt-rec-04p",
+      "pins": [
+        {
+          "position": 1,
+          "signal": "+12V",
+          "signalClass": "power",
+          "maxCurrentAmps": 5
+        },
+        {
+          "position": 2,
+          "signal": "GND",
+          "signalClass": "ground",
+          "maxCurrentAmps": 5
+        },
+        {
+          "position": 3,
+          "signal": "CAN_H",
+          "signalClass": "data"
+        },
+        {
+          "position": 4,
+          "signal": "CAN_L",
+          "signalClass": "data"
+        }
+      ]
+    },
+    {
+      "id": "ecu-tpl-power-2p",
+      "name": "ECU Power 2-pos",
+      "connectorPartId": "deutsch-dt-rec-02p",
+      "pins": [
+        {
+          "position": 1,
+          "signal": "+12V",
+          "signalClass": "power",
+          "maxCurrentAmps": 25
+        },
+        {
+          "position": 2,
+          "signal": "GND",
+          "signalClass": "ground",
+          "maxCurrentAmps": 25
+        }
+      ]
+    }
+  ]
+}

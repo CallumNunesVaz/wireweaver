@@ -3,9 +3,9 @@
  * validation. Issues carry an optional target so the UI can jump to it.
  */
 import type { Project } from './types'
-import { endLabel, isDevice } from './types'
+import { endLabel, isDevice, isWire } from './types'
 import type { LibraryLike } from './derivation'
-import { resolveAllEndpoints, validateHarness } from './derivation'
+import { resolveAllEndpoints, validateHarness, validateSplices } from './derivation'
 
 export type DrcSeverity = 'error' | 'warning'
 
@@ -22,13 +22,20 @@ export function runDrc(lib: LibraryLike, project: Project): DrcIssue[] {
   const warn = (message: string, target?: DrcIssue['target']) =>
     issues.push({ severity: 'warning', message, target })
 
-  // Device instances referencing missing parts or templates.
+    // Device instances referencing missing parts or templates.
   for (const inst of project.deviceInstances) {
     const part = lib.parts[inst.partId]
     const t = { type: 'instance' as const, id: inst.id }
     if (!part || !isDevice(part)) {
       err(`Device "${inst.label}" references a missing library part.`, t)
       continue
+    }
+    // Placeholder part check (Feature 2)
+    if (part.isPlaceholder) {
+      warn(
+        `Device "${inst.label}" uses placeholder part "${part.name}" — replace before manufacturing.`,
+        t
+      )
     }
     for (const port of part.ports) {
       if (!lib.templates[port.pinoutTemplateId]) {
@@ -65,7 +72,7 @@ export function runDrc(lib: LibraryLike, project: Project): DrcIssue[] {
     // Per-harness validation results (unresolved endpoints, orphan wires,
     // signal-class mismatches) surface as DRC issues too.
     for (const w of v.warnings) {
-      const isError = v.status === 'invalid' && /unresolved|reference pins/i.test(w)
+      const isError = v.status === 'invalid' && /^unresolved endpoint| reference pins that no longer exist/i.test(w)
       ;(isError ? err : warn)(`Harness "${h.name}": ${w}`, t)
     }
 
@@ -79,12 +86,15 @@ export function runDrc(lib: LibraryLike, project: Project): DrcIssue[] {
 
     // Twisted-pair references must be mutual.
     const byId = new Map(h.wires.map((w) => [w.id, w]))
+    const warnedTwists = new Set<string>()
     for (const w of h.wires) {
-      if (!w.twistedWith) continue
+      if (!w.twistedWith || warnedTwists.has(w.id)) continue
       const mate = byId.get(w.twistedWith)
       if (!mate || mate.twistedWith !== w.id) {
         warn(`Harness "${h.name}": twisted-pair reference on a wire is not mutual.`, t)
       }
+      warnedTwists.add(w.id)
+      warnedTwists.add(w.twistedWith)
     }
 
     // Every wired endpoint pair needs a segment length or the cutlist and
@@ -97,19 +107,14 @@ export function runDrc(lib: LibraryLike, project: Project): DrcIssue[] {
           wiredPairs.add([w.from.end, w.to.end].sort().join('~'))
         }
       }
-      const covered = (a: string, b: string) =>
-        h.segments.some(
-          (s) =>
-            s.lengthMm != null &&
-            ((s.fromEnd === a && s.toEnd === b) || (s.fromEnd === b && s.toEnd === a))
-        )
-      const missing = [...wiredPairs]
-        .map((k) => k.split('~') as [string, string])
-        .filter(([a, b]) => !covered(a, b))
+      const coveredPairs = new Set(
+        (h.segments ?? []).filter((s) => s.lengthMm != null).map((s) => [s.fromEnd, s.toEnd].sort().join('~'))
+      )
+      const missing = [...wiredPairs].filter((k) => !coveredPairs.has(k))
       if (missing.length > 0) {
         warn(
           `Harness "${h.name}": segment length missing for ${missing
-            .map(([a, b]) => `${a}–${b}`)
+            .map((k) => k.replace('~', '–'))
             .join(', ')} — cutlist will be incomplete.`,
           t
         )
@@ -141,6 +146,74 @@ export function runDrc(lib: LibraryLike, project: Project): DrcIssue[] {
           )
         }
       }
+    }
+
+    // Placeholder wire part check (Feature 2)
+    for (const w of h.wires) {
+      if (!w.wirePartId) continue
+      const wirePart = lib.parts[w.wirePartId]
+      if (wirePart?.isPlaceholder) {
+        warn(
+          `Harness "${h.name}": wire uses placeholder part "${wirePart.name}" — replace before manufacturing.`,
+          t
+        )
+      }
+    }
+
+    // Placeholder connector part check (Feature 2)
+    for (const [, re] of resolved) {
+      if (re.connector?.isPlaceholder) {
+        warn(
+          `Harness "${h.name}": connector "${re.connector.name}" at "${re.instance.label} ${re.port.name}" is a placeholder — replace before manufacturing.`,
+          t
+        )
+      }
+    }
+
+    // Current rating on connectors DRC (Feature 3)
+    for (let i = 0; i < h.endpoints.length; i++) {
+      const label = endLabel(i)
+      const re = resolved.get(label)
+      if (!re?.connector?.currentRatingAmps || !re.template) continue
+      const maxPinCurrent = Math.max(
+        ...re.template.pins.map((p) => p.maxCurrentAmps ?? 0),
+        0
+      )
+      if (maxPinCurrent > re.connector.currentRatingAmps) {
+        err(
+          `Harness "${h.name}": pin current (${maxPinCurrent}A) exceeds connector "${re.connector.name}" rating (${re.connector.currentRatingAmps}A) at ${re.instance.label} ${re.port.name}.`,
+          t
+        )
+      }
+    }
+
+    // Shield continuity DRC (Feature 4)
+    const shieldWires = h.wires.filter((w) => {
+      if (!w.wirePartId) return false
+      const part = lib.parts[w.wirePartId]
+      return part && isWire(part) && part.shield === true
+    })
+    for (const sw of shieldWires) {
+      const fromPin = resolved
+        .get(sw.from.end)
+        ?.pins.find((p) => p.position === sw.from.position)
+      const toPin = resolved
+        .get(sw.to.end)
+        ?.pins.find((p) => p.position === sw.to.position)
+      const hasGround =
+        fromPin?.signalClass === 'ground' || toPin?.signalClass === 'ground'
+      if (!hasGround) {
+        warn(
+          `Shield wire on harness "${h.name}" is not connected to a ground pin.`,
+          t
+        )
+      }
+    }
+
+    // Splice validation (Feature 6)
+    const spliceWarnings = validateSplices(h)
+    for (const sw of spliceWarnings) {
+      warn(`Harness "${h.name}": ${sw}`, t)
     }
   }
 

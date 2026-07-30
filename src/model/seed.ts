@@ -110,3 +110,49 @@ export function seedLibrary(): { parts: Part[]; templates: PinoutTemplate[] } {
     templates: [template]
   }
 }
+
+export function seedPlaceholderParts(): Part[] {
+  const unnamedConnector: Part = {
+    id: 'seed-placeholder-conn',
+    kind: 'connector',
+    name: 'Unspecified Connector',
+    type: 'COTS',
+    internalPartNumber: 'WW-PLACEHOLDER-CONN-0001',
+    manufacturer: 'Generic',
+    manufacturerPartNumber: '',
+    supplier: 'Generic',
+    supplierPartNumber: '',
+    positions: 4,
+    isPlaceholder: true
+  }
+
+  const unnamedWire: Part = {
+    id: 'seed-placeholder-wire',
+    kind: 'wire',
+    name: 'Unspecified Wire',
+    type: 'COTS',
+    internalPartNumber: 'WW-PLACEHOLDER-WIRE-0001',
+    manufacturer: 'Generic',
+    manufacturerPartNumber: '',
+    supplier: 'Generic',
+    supplierPartNumber: '',
+    gauge: '22 AWG',
+    isPlaceholder: true
+  }
+
+  const genericDevice: Part = {
+    id: 'seed-placeholder-device',
+    kind: 'device',
+    name: 'Generic Device',
+    type: 'COTS',
+    internalPartNumber: 'WW-PLACEHOLDER-DEV-0001',
+    manufacturer: 'Generic',
+    manufacturerPartNumber: '',
+    supplier: 'Generic',
+    supplierPartNumber: '',
+    ports: [],
+    isPlaceholder: true
+  }
+
+  return [unnamedConnector, unnamedWire, genericDevice]
+}

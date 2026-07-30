@@ -7,7 +7,11 @@ const api = {
     saveTemplates: (templates: unknown) =>
       ipcRenderer.invoke('library:saveTemplates', templates),
     export: (data: unknown) => ipcRenderer.invoke('library:export', data),
-    import: () => ipcRenderer.invoke('library:import')
+    import: () => ipcRenderer.invoke('library:import'),
+    getPath: () => ipcRenderer.invoke('library:getPath'),
+    setPath: (path: string) => ipcRenderer.invoke('library:setPath', path),
+    relocatePath: (path: string) => ipcRenderer.invoke('library:relocatePath', path),
+    choosePath: () => ipcRenderer.invoke('library:choosePath')
   },
   image: {
     import: (dataUrl: string, thumbDataUrl?: string) =>
@@ -41,6 +45,9 @@ const api = {
     get: () => ipcRenderer.invoke('recent:get'),
     add: (entry: { name: string; path: string }) =>
       ipcRenderer.invoke('recent:add', entry)
+  },
+  partLookup: {
+    search: (query: string) => ipcRenderer.invoke('part-lookup:search', query)
   }
 }
 

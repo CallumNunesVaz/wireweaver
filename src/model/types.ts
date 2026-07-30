@@ -1,6 +1,8 @@
 // ---------- Shared part properties ----------
 export type PartType = 'COTS' | 'MOTS' | 'Custom'
-export type PartKind = 'device' | 'connector' | 'wire'
+export type PartKind = 'device' | 'connector' | 'wire' | 'subassembly'
+
+export interface StripedColor { primary: string; secondary: string }
 
 export interface Money {
   amount: number
@@ -25,9 +27,10 @@ export interface PartBase {
   notes?: string
   createdAt?: number
   updatedAt?: number
+  isPlaceholder?: boolean
 }
 
-// ---------- The three part kinds ----------
+// ---------- The part kinds ----------
 export type PortSide = 'left' | 'right' | 'top' | 'bottom'
 
 export interface DevicePort {
@@ -49,6 +52,7 @@ export interface ConnectorPart extends PartBase {
   positions: number
   gender?: ConnectorGender
   matingConnectorPartId?: string
+  currentRatingAmps?: number
 }
 
 export interface WirePart extends PartBase {
@@ -66,9 +70,11 @@ export interface WirePart extends PartBase {
   operatingTemperature?: string
   insulatorColor?: string
   cableStyle?: string
+  colorPattern?: 'solid' | 'striped' | 'banded'
+  stripedColor?: StripedColor
 }
 
-export type Part = DevicePart | ConnectorPart | WirePart
+export type Part = DevicePart | ConnectorPart | WirePart | SubassemblyPart
 
 // ---------- Wire part extras ----------
 export type ColorCode = 'DIN' | 'IEC' | 'TEL' | 'T568A' | 'T568B'
@@ -81,6 +87,7 @@ export interface PinDef {
   position: number // 1-based
   signal: string
   signalClass?: SignalClass
+  maxCurrentAmps?: number
 }
 
 export interface PinoutTemplate {
@@ -132,6 +139,24 @@ export interface HarnessSegment {
   label?: string
 }
 
+export type AccessoryCategory = 'contact' | 'backshell' | 'seal' | 'heatshrink' | 'loom' | 'label' | 'other'
+
+export interface HarnessAccessory {
+  id: string
+  partId: string
+  category: AccessoryCategory
+  quantity: number
+  notes?: string
+}
+
+export interface HarnessSplice {
+  id: string
+  name: string
+  wireIds: string[]
+  position?: { x: number; y: number }
+  wirePartId?: string
+}
+
 export interface Harness {
   id: string
   name: string
@@ -142,6 +167,27 @@ export interface Harness {
   layout?: Record<EndLabel, { x: number; y: number }>
   description?: string
   notes?: string
+  accessories?: HarnessAccessory[]
+  splices?: HarnessSplice[]
+}
+
+export interface SubassemblyPart extends PartBase {
+  kind: 'subassembly'
+  harness: Harness
+  exposedPorts: {
+    id: string
+    name: string
+    pinoutTemplateId: string
+    side: PortSide
+  }[]
+}
+
+export interface ProjectRevision {
+  id: string
+  timestamp: number
+  label: string
+  description?: string
+  project: Omit<Project, 'revisions'>
 }
 
 export interface Project {
@@ -151,6 +197,7 @@ export interface Project {
   harnesses: Harness[]
   partSnapshots: Record<string, Part>
   templateSnapshots: Record<string, PinoutTemplate>
+  revisions: ProjectRevision[]
   // Title-block metadata for exported documentation.
   revision?: string
   author?: string
@@ -161,3 +208,4 @@ export interface Project {
 export const isDevice = (p: Part): p is DevicePart => p.kind === 'device'
 export const isConnector = (p: Part): p is ConnectorPart => p.kind === 'connector'
 export const isWire = (p: Part): p is WirePart => p.kind === 'wire'
+export const isSubassembly = (p: Part): p is SubassemblyPart => p.kind === 'subassembly'

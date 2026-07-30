@@ -9,12 +9,16 @@ import {
   ChevronDown,
   Pencil,
   Copy,
-  Trash2
+  Trash2,
+  Cable,
+  Plug
 } from 'lucide-react'
+import { Virtuoso } from 'react-virtuoso'
 import { useLibraryStore } from '../stores/libraryStore'
 import { useProjectStore } from '../stores/projectStore'
 import { useUiStore, type LibraryCategory } from '../stores/uiStore'
 import { findPartReferences, findTemplateReferences } from '../model/references'
+import { fuzzySearch } from './FuzzySearch'
 import type { Part, PartKind } from '../model/types'
 import { imageUrl } from '../shared/useImage'
 import { ContextMenu, type CtxItem } from '../shared/ContextMenu'
@@ -28,6 +32,15 @@ const CATEGORY_META: {
   { key: 'pinout', label: 'Pinout Templates', icon: ListTree }
 ]
 
+type FilterPill = 'all' | PartKind
+
+const FILTER_PILLS: { key: FilterPill; label: string; icon: typeof Cpu }[] = [
+  { key: 'all', label: 'All', icon: Cpu },
+  { key: 'device', label: 'Devices', icon: Cpu },
+  { key: 'connector', label: 'Connectors', icon: Plug },
+  { key: 'wire', label: 'Wires', icon: Cable }
+]
+
 export function LibraryPane() {
   const parts = useLibraryStore((s) => s.parts)
   const templates = useLibraryStore((s) => s.templates)
@@ -37,22 +50,28 @@ export function LibraryPane() {
   const openTemplateEditor = useUiStore((s) => s.openTemplateEditor)
 
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const [activeFilter, setActiveFilter] = useState<FilterPill>('all')
 
-  const q = search.trim().toLowerCase()
-  const matches = (text: string) => !q || text.toLowerCase().includes(q)
+  const filteredParts = useMemo(() => {
+    let result = fuzzySearch(parts, search)
+    if (activeFilter !== 'all') {
+      result = result.filter((p) => p.kind === activeFilter)
+    }
+    return result
+  }, [parts, search, activeFilter])
+
+  const templateMatches = useMemo(
+    () => templates.filter((t) => !search.trim() || t.name.toLowerCase().includes(search.trim().toLowerCase())),
+    [templates, search]
+  )
 
   const grouped = useMemo(() => {
-    const by: Record<PartKind, Part[]> = { device: [], connector: [], wire: [] }
-    for (const p of parts) {
-      if (matches(`${p.name} ${p.internalPartNumber} ${p.manufacturerPartNumber}`)) {
-        by[p.kind].push(p)
-      }
+    const by: Record<PartKind, Part[]> = { device: [], connector: [], wire: [], subassembly: [] }
+    for (const p of filteredParts) {
+      by[p.kind].push(p)
     }
     return by
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [parts, q])
-
-  const templateMatches = templates.filter((t) => matches(t.name))
+  }, [filteredParts])
 
   return (
     <aside className="flex w-64 shrink-0 flex-col border-r border-edge bg-panel">
@@ -72,7 +91,24 @@ export function LibraryPane() {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      {/* Filter pills */}
+      <div className="flex flex-wrap gap-1 border-b border-edge px-2 py-1.5">
+        {FILTER_PILLS.map(({ key, label }) => (
+          <button
+            key={key}
+            className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
+              activeFilter === key
+                ? 'bg-accent text-white'
+                : 'bg-panelalt text-muted hover:text-ink'
+            }`}
+            onClick={() => setActiveFilter(key)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="min-h-0 flex-1">
         {CATEGORY_META.map(({ key, label, icon: Icon }) => {
           const isOpen = !collapsed[key]
           const items = key === 'pinout' ? templateMatches : grouped[key as PartKind]
@@ -105,19 +141,25 @@ export function LibraryPane() {
                 </button>
               </div>
 
-              {isOpen && (
-                <div className="space-y-1 px-2 pb-2">
-                  {items.length === 0 && (
-                    <div className="px-1 py-2 text-[11px] text-muted">None yet.</div>
-                  )}
-                  {key === 'pinout'
-                    ? templateMatches.map((t) => (
-                        <TemplateCard key={t.id} id={t.id} name={t.name} />
-                      ))
-                    : grouped[key as PartKind].map((p) => (
-                        <PartCard key={p.id} part={p} />
-                      ))}
-                </div>
+              {isOpen && items.length > 0 && (
+                <Virtuoso
+                  style={{ height: Math.min(items.length * 88, 400) }}
+                  totalCount={items.length}
+                  itemContent={(index) => {
+                    const item = items[index]
+                    if (key === 'pinout' && 'connectorPartId' in item) {
+                      const t = item as typeof templates[0]
+                      return <TemplateCardListItem id={t.id} name={t.name} />
+                    }
+                    if ('kind' in item) {
+                      return <PartCardListItem part={item as Part} />
+                    }
+                    return null
+                  }}
+                />
+              )}
+              {isOpen && items.length === 0 && (
+                <div className="px-1 py-2 text-[11px] text-muted">None yet.</div>
               )}
             </section>
           )
@@ -127,7 +169,7 @@ export function LibraryPane() {
   )
 }
 
-function PartCard({ part }: { part: Part }) {
+function PartCardListItem({ part }: { part: Part }) {
   const img = imageUrl(part.imageHash, 'thumb')
   const openPartEditor = useUiStore((s) => s.openPartEditor)
   const removePart = useLibraryStore((s) => s.removePart)
@@ -143,7 +185,6 @@ function PartCard({ part }: { part: Part }) {
 
   const menuItems: CtxItem[] = useMemo(() => {
     if (!menu) return []
-    // Compute references lazily, only when the menu is open.
     const lib = useLibraryStore.getState()
     const project = useProjectStore.getState().project
     const refs = findPartReferences(part.id, lib.parts, lib.templates, project)
@@ -157,7 +198,7 @@ function PartCard({ part }: { part: Part }) {
         label: 'Duplicate',
         icon: <Copy size={14} />,
         onClick: () =>
-          upsertPart({ ...part, id: nanoid(), name: `${part.name} copy` })
+          upsertPart({ ...part, id: nanoid(), name: `${part.name} copy`, createdAt: Date.now(), updatedAt: Date.now() })
       },
       {
         label: 'Delete',
@@ -205,7 +246,7 @@ function PartCard({ part }: { part: Part }) {
   )
 }
 
-function TemplateCard({ id, name }: { id: string; name: string }) {
+function TemplateCardListItem({ id, name }: { id: string; name: string }) {
   const openTemplateEditor = useUiStore((s) => s.openTemplateEditor)
   const removeTemplate = useLibraryStore((s) => s.removeTemplate)
   const template = useLibraryStore((s) => s.templates.find((t) => t.id === id))

@@ -4,12 +4,12 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        panel: '#1b1e24',
-        panelalt: '#232730',
-        edge: '#2f343f',
-        ink: '#e7e9ee',
-        muted: '#9aa1ad',
-        accent: '#5b9bff'
+        panel: 'var(--color-panel)',
+        panelalt: 'var(--color-panelalt)',
+        edge: 'var(--color-edge)',
+        ink: 'var(--color-ink)',
+        muted: 'var(--color-muted)',
+        accent: 'var(--color-accent)'
       }
     }
   },

@@ -4,7 +4,27 @@
 @tailwind utilities;
 
 :root {
+  --color-panel: #1b1e24;
+  --color-panelalt: #232730;
+  --color-edge: #2f343f;
+  --color-ink: #e7e9ee;
+  --color-muted: #9aa1ad;
+  --color-accent: #5b9bff;
+  --color-bg: #14161b;
+
   color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --color-panel: #ffffff;
+  --color-panelalt: #f0f1f5;
+  --color-edge: #d1d5db;
+  --color-ink: #111827;
+  --color-muted: #6b7280;
+  --color-accent: #3b82f6;
+  --color-bg: #f5f6fa;
+
+  color-scheme: light;
 }
 
 html,
@@ -15,8 +35,8 @@ body,
 }
 
 body {
-  background: #14161b;
-  color: #e7e9ee;
+  background: var(--color-bg);
+  color: var(--color-ink);
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   font-size: 13px;
   overflow: hidden;
@@ -35,7 +55,7 @@ select {
   height: 10px;
 }
 *::-webkit-scrollbar-thumb {
-  background: #3a3f4b;
+  background: var(--color-edge);
   border-radius: 6px;
 }
 *::-webkit-scrollbar-track {
@@ -65,10 +85,42 @@ select {
   }
 }
 
-/* React Flow dark tuning */
+/* React Flow theme-aware */
 .react-flow {
-  background: #14161b;
+  background: var(--color-bg);
 }
 .react-flow__attribution {
   display: none;
+}
+
+/* Only the actively-dragged node gets GPU promotion. */
+.react-flow__node.dragging {
+  will-change: transform;
+  contain: layout style;
+}
+.react-flow__node {
+  contain: layout style;
+}
+
+/* Minimal shadow — the drop-shadow filter on selected nodes is enough. */
+.react-flow__node > div {
+  box-shadow: none;
+  outline: 1px solid var(--color-edge);
+}
+.react-flow__node.selected > div {
+  outline-color: var(--color-accent);
+}
+
+/* Dark theme overrides for React Flow controls (they use inline styles) */
+.react-flow__controls-button {
+  background: var(--color-panel);
+  border-color: var(--color-edge);
+  fill: var(--color-ink);
+}
+.react-flow__controls-button:hover {
+  background: var(--color-panelalt);
+}
+
+.react-flow__minimap {
+  background: var(--color-panel);
 }

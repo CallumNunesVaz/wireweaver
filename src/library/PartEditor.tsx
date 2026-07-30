@@ -46,9 +46,8 @@ export function PartEditor() {
     target.partId ? s.parts.find((p) => p.id === target.partId) : undefined
   )
   const templates = useLibraryStore((s) => s.templates)
-  const connectors = useMemo(
-    () => useLibraryStore.getState().parts.filter(isConnector).map((c) => ({ id: c.id, name: c.name })),
-    []
+  const connectors = useLibraryStore((s) =>
+    s.parts.filter(isConnector).map((c) => ({ id: c.id, name: c.name }))
   )
 
   const [draft, setDraft] = useState<Part>(

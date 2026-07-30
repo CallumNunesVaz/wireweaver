@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { FileDown, FileText, Printer, Share2 } from 'lucide-react'
 import { Modal } from '../shared/Modal'
 import { toast } from '../shared/toast'
@@ -25,10 +25,10 @@ type Tab = 'wiring' | 'cutlist' | 'netlist'
 /** Capture the assembly canvas as a PNG data URL; undefined when unavailable. */
 async function captureAssemblyPng(): Promise<string | undefined> {
   try {
-    const el = document.querySelector('.react-flow__viewport') as HTMLElement | null
+    const el = document.querySelector('.react-flow:not([style*="position: fixed"]) .react-flow__viewport') as HTMLElement | null
     if (!el) return undefined
     const { toPng } = await import('html-to-image')
-    return await toPng(el, { backgroundColor: '#14161b' })
+    return await toPng(el, { backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--color-bg').trim() || '#14161b' })
   } catch {
     return undefined
   }
@@ -47,6 +47,11 @@ export function ReportsModal() {
   const [wirevizHarnessId, setWirevizHarnessId] = useState(
     project.harnesses[0]?.id ?? ''
   )
+  useEffect(() => {
+    if (!project.harnesses.find((h) => h.id === wirevizHarnessId)) {
+      setWirevizHarnessId(project.harnesses[0]?.id ?? '')
+    }
+  }, [project.harnesses, wirevizHarnessId])
 
   const wiringRows = useMemo(() => wiringTableAll(lib, project), [lib, project])
   const cutRows = useMemo(() => cutlist(lib, project, slackMm), [lib, project, slackMm])

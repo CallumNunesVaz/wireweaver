@@ -35,13 +35,16 @@ export function wireLabels(harness: Harness): Map<string, string> {
   return labels
 }
 
-function segmentLengthMm(harness: Harness, w: HarnessWire): number | undefined {
-  const seg = harness.segments.find(
-    (s) =>
-      (s.fromEnd === w.from.end && s.toEnd === w.to.end) ||
-      (s.fromEnd === w.to.end && s.toEnd === w.from.end)
-  )
-  return seg?.lengthMm
+function buildSegmentMap(harness: Harness): Map<string, number | undefined> {
+  const map = new Map<string, number | undefined>()
+  for (const s of harness.segments ?? []) {
+    map.set([s.fromEnd, s.toEnd].sort().join('~'), s.lengthMm)
+  }
+  return map
+}
+
+function segmentLengthMm(w: HarnessWire, segMap: Map<string, number | undefined>): number | undefined {
+  return segMap.get([w.from.end, w.to.end].sort().join('~'))
 }
 
 function signalAt(re: ResolvedEndpoint | undefined, position: number): string {
@@ -55,6 +58,7 @@ export function wiringTable(
 ): WiringRow[] {
   const { resolved } = resolveAllEndpoints(lib, project.deviceInstances, harness)
   const labels = wireLabels(harness)
+  const segMap = buildSegmentMap(harness)
   const rows: WiringRow[] = []
   for (const w of harness.wires) {
     const from = resolved.get(w.from.end)
@@ -75,7 +79,7 @@ export function wiringTable(
       color: w.color ?? wirePart?.color ?? '',
       gauge: formatGauge(wirePart?.gauge),
       wirePart: wirePart?.name ?? '',
-      lengthMm: segmentLengthMm(harness, w),
+      lengthMm: segmentLengthMm(w, segMap),
       twistedWith: w.twistedWith ? labels.get(w.twistedWith) ?? '' : ''
     })
   }
@@ -105,10 +109,11 @@ export interface CutlistRow {
 export function cutlist(lib: LibraryLike, project: Project, slackMm = 0): CutlistRow[] {
   const groups = new Map<string, CutlistRow>()
   for (const h of project.harnesses) {
+    const segMap = buildSegmentMap(h)
     for (const w of h.wires) {
       const part = w.wirePartId ? lib.parts[w.wirePartId] : undefined
       const wirePart = part && isWire(part) ? part : undefined
-      const length = segmentLengthMm(h, w)
+      const length = segmentLengthMm(w, segMap)
       const cut = length != null ? length + slackMm : undefined
       const row: CutlistRow = {
         wirePart: wirePart?.name ?? '(unspecified)',
@@ -303,6 +308,51 @@ export function netlistCsv(nets: Net[]): string {
     for (const n of net.nodes) {
       lines.push([net.name, n.device, n.port, n.pin, n.signal].map(esc).join(','))
     }
+  }
+  return lines.join('\n')
+}
+
+// ---------- Bundle / segment labels ----------
+
+export interface BundleLabel {
+  label: string
+  fromEnd: string
+  toEnd: string
+  lengthMm?: number
+}
+
+/**
+ * Generate unique labels for each harness segment. Labels follow the pattern
+ * "A-B-1", "A-B-2", etc. based on the endpoint pair.
+ */
+export function bundleLabels(harness: Harness): BundleLabel[] {
+  const pairCounts = new Map<string, number>()
+  const results: BundleLabel[] = []
+
+  for (const seg of harness.segments) {
+    const key = [seg.fromEnd, seg.toEnd].sort().join('-').toUpperCase()
+    const count = (pairCounts.get(key) ?? 0) + 1
+    pairCounts.set(key, count)
+    results.push({
+      label: `${key}-${count}`,
+      fromEnd: seg.fromEnd,
+      toEnd: seg.toEnd,
+      lengthMm: seg.lengthMm
+    })
+  }
+
+  return results
+}
+
+/** Export bundle labels as CSV compatible with Brady/Dymo label printers. */
+export function bundleLabelsCsv(
+  rows: { label: string; fromEnd: string; toEnd: string; lengthMm?: number }[]
+): string {
+  const lines = ['Label,From,To,Length']
+  for (const r of rows) {
+    lines.push(
+      [r.label, r.fromEnd, r.toEnd, r.lengthMm ?? ''].map(esc).join(',')
+    )
   }
   return lines.join('\n')
 }

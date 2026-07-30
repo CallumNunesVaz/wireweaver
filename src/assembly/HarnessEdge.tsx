@@ -101,11 +101,18 @@ function HarnessEdgeImpl({
   )
 }
 
-function StatusIcon({ status, color }: { status: HarnessStatus; color: string }) {
+const StatusIcon = memo(function StatusIcon({ status, color }: { status: HarnessStatus; color: string }) {
   if (status === 'wired') return <CheckCircle2 size={12} color={color} />
   if (status === 'invalid') return <AlertTriangle size={12} color={color} />
   if (status === 'partial') return <AlertTriangle size={12} color={color} />
   return <Circle size={12} color={color} />
-}
+})
 
-export const HarnessEdge = memo(HarnessEdgeImpl)
+export const HarnessEdge = memo(HarnessEdgeImpl, (prev, next) =>
+  prev.id === next.id &&
+  prev.selected === next.selected &&
+  prev.data?.harnessId === next.data?.harnessId &&
+  prev.data?.hovered === next.data?.hovered &&
+  prev.data?.status === next.data?.status &&
+  prev.data?.wireCount === next.data?.wireCount
+)

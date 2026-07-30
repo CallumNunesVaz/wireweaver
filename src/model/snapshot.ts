@@ -36,6 +36,8 @@ export function withSnapshots(
   for (const inst of project.deviceInstances) addPart(inst.partId)
   for (const h of project.harnesses) {
     for (const w of h.wires) addPart(w.wirePartId)
+    for (const a of h.accessories ?? []) addPart(a.partId)
+    for (const s of h.splices ?? []) addPart(s.wirePartId)
   }
 
   return { ...project, partSnapshots, templateSnapshots }

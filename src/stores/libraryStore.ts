@@ -28,12 +28,15 @@ function debounced<A extends unknown[]>(fn: (...args: A) => void, ms: number) {
 interface LibraryState {
   parts: Part[]
   templates: PinoutTemplate[]
+  libraryPath: string
   loaded: boolean
   load: () => Promise<void>
   upsertPart: (part: Part) => void
   removePart: (id: string) => void
   upsertTemplate: (template: PinoutTemplate) => void
   removeTemplate: (id: string) => void
+  setLibraryPath: (path: string) => Promise<void>
+  relocateLibrary: (path: string) => Promise<void>
 }
 
 const persistParts = debounced((parts: Part[]) => {
@@ -55,24 +58,27 @@ if (typeof window !== 'undefined') {
     persistParts.flush()
     persistTemplates.flush()
   })
+  // Flag to prevent double registration in hot reload
+  ;(window as any).__ww_persistFlush__ = true
 }
 
 export const useLibraryStore = create<LibraryState>((set, get) => ({
   parts: [],
   templates: [],
+  libraryPath: '',
   loaded: false,
 
   load: async () => {
+    const libPath = await window.ww.library.getPath()
     const { parts, templates, isNew } = await window.ww.library.load()
     if (isNew && (parts?.length ?? 0) === 0 && (templates?.length ?? 0) === 0) {
-      // First run: populate a small starter library and persist it.
       const seed = seedLibrary()
-      set({ parts: seed.parts, templates: seed.templates, loaded: true })
+      set({ parts: seed.parts, templates: seed.templates, libraryPath: libPath, loaded: true })
       window.ww.library.saveParts(seed.parts)
       window.ww.library.saveTemplates(seed.templates)
       return
     }
-    set({ parts: parts ?? [], templates: templates ?? [], loaded: true })
+    set({ parts: parts ?? [], templates: templates ?? [], libraryPath: libPath, loaded: true })
   },
 
   upsertPart: (part) => {
@@ -109,6 +115,19 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     const templates = get().templates.filter((t) => t.id !== id)
     set({ templates })
     persistTemplates.call(templates)
+  },
+
+  setLibraryPath: async (path) => {
+    const libPath = await window.ww.library.setPath(path)
+    set({ libraryPath: libPath })
+    // Reload library from new path.
+    await get().load()
+  },
+
+  relocateLibrary: async (path) => {
+    const libPath = await window.ww.library.relocatePath(path)
+    set({ libraryPath: libPath })
+    await get().load()
   }
 }))
 

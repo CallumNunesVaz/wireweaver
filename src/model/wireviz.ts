@@ -10,6 +10,12 @@ import type { Harness, Project } from './types'
 import { endLabel, isWire } from './types'
 import type { LibraryLike } from './derivation'
 import { resolveAllEndpoints } from './derivation'
+import { COLOR_ABBREV_MAP } from './wire'
+
+const HEX_TO_ABBREV: Map<string, string> = new Map()
+for (const [abbr, hex] of Object.entries(COLOR_ABBREV_MAP)) {
+  HEX_TO_ABBREV.set(hex.toUpperCase(), abbr)
+}
 
 function y(s: string): string {
   return JSON.stringify(s)
@@ -60,6 +66,16 @@ export function wirevizYaml(lib: LibraryLike, project: Project, harness: Harness
     b: string
     wires: { aPin: number; bPin: number; color?: string; wirePartId?: string }[]
   }
+
+  function wirevizColor(wirePartId?: string): string | undefined {
+    if (!wirePartId) return undefined
+    const wp = lib.parts[wirePartId]
+    if (!wp || !isWire(wp) || !wp.stripedColor) return undefined
+    const pa = HEX_TO_ABBREV.get(wp.stripedColor.primary)
+    const sa = HEX_TO_ABBREV.get(wp.stripedColor.secondary)
+    if (pa && sa) return `${pa}/${sa}`
+    return undefined
+  }
   const groups = new Map<string, Group>()
   for (const w of harness.wires) {
     // Normalize so (a,b) and (b,a) share a group; keep pin sides consistent.
@@ -80,7 +96,7 @@ export function wirevizYaml(lib: LibraryLike, project: Project, harness: Harness
     const name = `CABLE_${g.key.toUpperCase()}`
     lines.push(`  ${name}:`)
     lines.push(`    wirecount: ${g.wires.length}`)
-    const colors = g.wires.map((w) => w.color ?? '')
+    const colors = g.wires.map((w) => wirevizColor(w.wirePartId) ?? w.color ?? '')
     if (colors.some((c) => c)) lines.push(`    colors: ${yList(colors)}`)
     const partId = g.wires.find((w) => w.wirePartId)?.wirePartId
     const part = partId ? lib.parts[partId] : undefined

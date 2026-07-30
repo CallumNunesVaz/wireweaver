@@ -1,4 +1,4 @@
-import type { ColorCode } from './types'
+import type { ColorCode, StripedColor } from './types'
 
 /**
  * IEC 60757 color code sequence (ROY G BIV + grey/white/black).
@@ -50,14 +50,9 @@ const CODE_MAP: Record<ColorCode, string[]> = {
 
 /** Resolve a color code abbreviation to a CSS color. */
 export function codeColor(abbr: string): string {
-  const map: Record<string, string> = {
-    BK: '#000000', WH: '#ffffff', GY: '#999999', PK: '#ff66cc',
-    RD: '#ff0000', OG: '#ff8000', YE: '#ffff00', GN: '#00cc00',
-    BU: '#0066ff', VT: '#8000ff', BN: '#895956', TQ: '#00ffff',
-    LB: '#a0dfff', OL: '#708000', BG: '#ceb673', IV: '#f5f0d0',
-    SL: '#708090', CU: '#d6775e', SN: '#aaaaaa', SR: '#84878c',
-    GD: '#ffcf80',
-    // Combined abbreviations (use dominant)
+  const base = COLOR_ABBREV_MAP[abbr]
+  if (base) return base
+  const combined: Record<string, string> = {
     GYPK: '#999999', RDBU: '#8000ff', WHGN: '#00cc00', BNGN: '#895956',
     WHYE: '#ffff00', YEBN: '#ffff00', WHGY: '#999999', GYBN: '#895956',
     WHPK: '#ff66cc', PKBN: '#895956', WHBU: '#0066ff', BNBU: '#895956',
@@ -68,12 +63,13 @@ export function codeColor(abbr: string): string {
     BUOG: '#0066ff', GNBK: '#00cc00', BNSL: '#895956',
     SP: '#84878c' // silver / shield placeholder
   }
-  return map[abbr] ?? '#888888'
+  return combined[abbr] ?? '#888888'
 }
 
 /** Get color sequence for a given code, repeating if needed. */
 export function codeSequence(code: ColorCode, count: number): string[] {
   const seq = CODE_MAP[code] ?? []
+  if (seq.length === 0) return new Array(count).fill(undefined)
   const out: string[] = []
   for (let i = 0; i < count; i++) {
     out.push(seq[i % seq.length])
@@ -93,7 +89,7 @@ export function awgToMm2(awg: number): number {
 /** Convert mm² to approximate AWG. */
 export function mm2ToAwg(mm2: number): number | null {
   if (mm2 <= 0) return null
-  for (let awg = 40; awg >= 1; awg--) {
+  for (let awg = 48; awg >= 1; awg--) {
     if (awgToMm2(awg) >= mm2) return awg
   }
   return null
@@ -126,4 +122,34 @@ export function formatGauge(gauge?: string): string {
       : `${parsed.mm2} mm² (≈ ${parsed.awg} AWG)`
   }
   return parsed.label
+}
+
+// ---------- Striped / banded colors ----------
+
+/** Map color abbreviations to hex colors. */
+export const COLOR_ABBREV_MAP: Record<string, string> = {
+  BK: '#000000', WH: '#ffffff', GY: '#999999', PK: '#ff66cc',
+  RD: '#ff0000', OG: '#ff8000', YE: '#ffff00', GN: '#00cc00',
+  BU: '#0066ff', VT: '#8000ff', BN: '#895956', TQ: '#00ffff',
+  LB: '#a0dfff', OL: '#708000', BG: '#ceb673', IV: '#f5f0d0',
+  SL: '#708090', CU: '#d6775e', SN: '#aaaaaa', SR: '#84878c',
+  GD: '#ffcf80'
+}
+
+/**
+ * Parse a striped color string like "WH/GN", "BK/WH", "RD/BU" into a
+ * StripedColor with hex values. Returns null if the format is unrecognised.
+ */
+export function parseStripedColor(colorString: string): StripedColor | null {
+  const parts = colorString.split('/')
+  if (parts.length !== 2) return null
+  const primary = COLOR_ABBREV_MAP[parts[0].trim().toUpperCase()]
+  const secondary = COLOR_ABBREV_MAP[parts[1].trim().toUpperCase()]
+  if (!primary || !secondary) return null
+  return { primary, secondary }
+}
+
+/** Render a striped color as a CSS linear-gradient for use in SVG or DOM. */
+export function renderStripedColor(striped: StripedColor): string {
+  return `repeating-linear-gradient(45deg, ${striped.primary} 0px, ${striped.primary} 6px, ${striped.secondary} 6px, ${striped.secondary} 12px)`
 }

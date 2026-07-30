@@ -40,7 +40,7 @@ export function ContextMenu({
   }, [onClose])
 
   const left = Math.min(x, window.innerWidth - 210)
-  const top = Math.min(y, window.innerHeight - items.length * 32 - 16)
+  const top = Math.min(y, window.innerHeight - 220)
 
   return (
     <div
