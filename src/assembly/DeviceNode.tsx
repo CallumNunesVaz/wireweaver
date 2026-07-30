@@ -32,7 +32,7 @@ function DeviceNodeImpl({ id, selected, data }: NodeProps) {
   )
   const templates = useLibraryStore((s) => s.templates)
   const hoveredPortId = useUiStore(
-    (s) => s.hoverEndpoints.find((e) => e.instanceId === id)?.portId
+    (s) => s.hoverEndpoints?.find((e) => e.instanceId === id)?.portId
   )
   const img = imageUrl(part?.imageHash, 'thumb')
 
@@ -126,7 +126,7 @@ function DeviceNodeImpl({ id, selected, data }: NodeProps) {
               style={{
                 ...style,
                 width: connectTarget ? 12 : 10,
-                height: connectTarget ? 12: 10,
+                height: connectTarget ? 12 : 10,
                 background: highlight
                   ? '#5b9bff'
                   : connectTarget

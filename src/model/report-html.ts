@@ -113,7 +113,7 @@ export function buildHtmlReport(
   </dl>
 </div>
 
-${opts.diagramPng ? `<section><h2>Assembly</h2><img class="diagram" src="${opts.diagramPng}" alt="Assembly diagram"></section>` : ''}
+${opts.diagramPng && /^data:image\//.test(opts.diagramPng) ? `<section><h2>Assembly</h2><img class="diagram" src="${opts.diagramPng}" alt="Assembly diagram"></section>` : ''}
 
 <section>
 <h2>Bill of Materials</h2>

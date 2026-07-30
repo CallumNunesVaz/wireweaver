@@ -70,6 +70,7 @@ export function instantiateSubassembly(
 
   const remappedSplices = (subassembly.harness.splices ?? []).map((s) => ({
     ...s,
+    id: nanoid(),
     wireIds: s.wireIds.map((wid) => wireIdMap.get(wid) ?? wid)
   }))
 
@@ -79,7 +80,7 @@ export function instantiateSubassembly(
     name: `${subassembly.name} Harness`,
     endpoints,
     wires: remappedWires,
-    accessories: (subassembly.harness.accessories ?? []).map((a) => ({ ...a })),
+    accessories: (subassembly.harness.accessories ?? []).map((a) => ({ ...a, id: nanoid() })),
     splices: remappedSplices
   }
 

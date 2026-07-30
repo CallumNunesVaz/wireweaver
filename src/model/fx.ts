@@ -7,7 +7,10 @@ export async function fetchRates(): Promise<Record<string, number> | null> {
   if (ratesCache) return ratesCache
 
   try {
-    const res = await fetch('https://api.frankfurter.app/latest')
+    const controller = new AbortController()
+    const id = setTimeout(() => controller.abort(), 5000)
+    const res = await fetch('https://api.frankfurter.app/latest', { signal: controller.signal })
+    clearTimeout(id)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const data = await res.json()
     const rates: Record<string, number> = {
@@ -39,7 +42,7 @@ export async function convertBomTotals(
     if (!r.cost) continue
     const rowCurrency = r.cost.currency
     const fromRate = rates[rowCurrency]
-    if (!fromRate) return null
+    if (!fromRate) continue
     const eur = new Decimal(r.cost.amount).div(new Decimal(fromRate))
     const converted = eur.times(new Decimal(rate)).times(r.quantity)
     total = total.plus(converted)

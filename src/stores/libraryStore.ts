@@ -41,25 +41,24 @@ interface LibraryState {
 
 const persistParts = debounced((parts: Part[]) => {
   window.ww?.library
-    .saveParts(parts)
-    .catch(() => toast('Failed to save library parts to disk.', 'error'))
+    ?.saveParts(parts)
+    ?.catch(() => toast('Failed to save library parts to disk.', 'error'))
 }, 500)
 
 const persistTemplates = debounced((templates: PinoutTemplate[]) => {
   window.ww?.library
-    .saveTemplates(templates)
-    .catch(() => toast('Failed to save pinout templates to disk.', 'error'))
+    ?.saveTemplates(templates)
+    ?.catch(() => toast('Failed to save pinout templates to disk.', 'error'))
 }, 500)
 
 // Flush pending debounced writes when the window goes away so an edit made
 // just before quitting isn't lost.
-if (typeof window !== 'undefined') {
+if (typeof window !== 'undefined' && !(window as any).__ww_persistFlush__) {
+  ;(window as any).__ww_persistFlush__ = true
   window.addEventListener('beforeunload', () => {
     persistParts.flush()
     persistTemplates.flush()
   })
-  // Flag to prevent double registration in hot reload
-  ;(window as any).__ww_persistFlush__ = true
 }
 
 export const useLibraryStore = create<LibraryState>((set, get) => ({
@@ -69,13 +68,13 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   loaded: false,
 
   load: async () => {
-    const libPath = await window.ww.library.getPath()
-    const { parts, templates, isNew } = await window.ww.library.load()
+    const libPath = await window.ww?.library.getPath()
+    const { parts, templates, isNew } = await window.ww?.library.load()
     if (isNew && (parts?.length ?? 0) === 0 && (templates?.length ?? 0) === 0) {
       const seed = seedLibrary()
       set({ parts: seed.parts, templates: seed.templates, libraryPath: libPath, loaded: true })
-      window.ww.library.saveParts(seed.parts)
-      window.ww.library.saveTemplates(seed.templates)
+      window.ww?.library.saveParts(seed.parts)
+      window.ww?.library.saveTemplates(seed.templates)
       return
     }
     set({ parts: parts ?? [], templates: templates ?? [], libraryPath: libPath, loaded: true })
@@ -118,14 +117,14 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   },
 
   setLibraryPath: async (path) => {
-    const libPath = await window.ww.library.setPath(path)
+    const libPath = await window.ww?.library.setPath(path)
     set({ libraryPath: libPath })
     // Reload library from new path.
     await get().load()
   },
 
   relocateLibrary: async (path) => {
-    const libPath = await window.ww.library.relocatePath(path)
+    const libPath = await window.ww?.library.relocatePath(path)
     set({ libraryPath: libPath })
     await get().load()
   }

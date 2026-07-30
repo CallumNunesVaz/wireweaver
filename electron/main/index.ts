@@ -71,7 +71,12 @@ async function ensureDirs(): Promise<void> {
 async function writeJsonAtomic(file: string, data: unknown): Promise<void> {
   const tmp = `${file}.${process.pid}.tmp`
   await fs.writeFile(tmp, JSON.stringify(data, null, 2), 'utf8')
-  await fs.rename(tmp, file)
+  try {
+    await fs.rename(tmp, file)
+  } catch (e) {
+    await fs.unlink(tmp).catch(() => {})
+    throw e
+  }
 }
 
 async function readJson<T>(file: string, fallback: T): Promise<T> {
@@ -156,8 +161,11 @@ function registerProtocol(): void {
       }
 
       return new Response('Not found', { status: 404 })
-    } catch {
-      return new Response('Not found', { status: 404 })
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') {
+        return new Response('Not found', { status: 404 })
+      }
+      return new Response('Internal error', { status: 500 })
     }
   })
 }
@@ -200,7 +208,7 @@ function createWindow(): void {
       })
       if (choice === 1) return
       projectDirty = false
-      mainWindow?.close()
+      mainWindow!.close()
     }
   })
 
@@ -327,12 +335,9 @@ async function registerIpc(): Promise<void> {
   })
 
   ipcMain.handle('project:openPath', async (_e, path: string) => {
-    try {
-      const data = await readJson(path, null)
-      return { canceled: false, path, data }
-    } catch {
-      return { canceled: true }
-    }
+    const data = await readJson(path, null)
+    if (!data) return { canceled: true }
+    return { canceled: false, path, data }
   })
 
   ipcMain.handle('project:setDirty', async (_e, dirty: boolean) => {
@@ -411,7 +416,7 @@ async function registerIpc(): Promise<void> {
   )
 
   ipcMain.handle('library:choosePath', async () => {
-    const win = BrowserWindow.getFocusedWindow()
+    const win = BrowserWindow.getFocusedWindow() ?? mainWindow
     if (!win) return null
     const res = await dialog.showOpenDialog(win, {
       title: 'Choose library database folder',

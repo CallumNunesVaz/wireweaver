@@ -62,6 +62,7 @@ export function restoreRevision(
   if (!rev) return project
   return {
     ...rev.project,
+    id: project.id,
     revisions: project.revisions
   }
 }

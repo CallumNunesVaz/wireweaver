@@ -69,7 +69,7 @@ export function codeColor(abbr: string): string {
 /** Get color sequence for a given code, repeating if needed. */
 export function codeSequence(code: ColorCode, count: number): string[] {
   const seq = CODE_MAP[code] ?? []
-  if (seq.length === 0) return new Array(count).fill(undefined)
+  if (seq.length === 0) return []
   const out: string[] = []
   for (let i = 0; i < count; i++) {
     out.push(seq[i % seq.length])
@@ -81,7 +81,7 @@ export function codeSequence(code: ColorCode, count: number): string[] {
 
 /** Convert AWG to approximate mm² (cross-sectional area). */
 export function awgToMm2(awg: number): number {
-  if (awg <= 0) return 0
+  if (awg <= 0) return NaN
   // Area = 0.012668 · 92^((36−n)/19.5); the /39 exponent is for diameter.
   return Math.round(0.012668 * Math.pow(92, (36 - awg) / 19.5) * 100) / 100
 }

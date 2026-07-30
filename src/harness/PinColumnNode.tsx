@@ -92,10 +92,16 @@ function PinColumnNodeImpl({ data }: NodeProps) {
   )
 }
 
-export const PinColumnNode = memo(PinColumnNodeImpl, (prev, next) =>
-  prev.id === next.id &&
-  prev.selected === next.selected &&
-  (prev.data as PinColumnData)?.end === (next.data as PinColumnData)?.end &&
-  (prev.data as PinColumnData)?.hideUnused === (next.data as PinColumnData)?.hideUnused &&
-  (prev.data as PinColumnData)?.wiredPositions?.length === (next.data as PinColumnData)?.wiredPositions?.length
-)
+export const PinColumnNode = memo(PinColumnNodeImpl, (prev, next) => {
+  const pd = prev.data as PinColumnData
+  const nd = next.data as PinColumnData
+  return (
+    prev.id === next.id &&
+    prev.selected === next.selected &&
+    pd.end === nd.end &&
+    pd.hideUnused === nd.hideUnused &&
+    pd.wiredPositions?.length === nd.wiredPositions?.length &&
+    pd.title === nd.title &&
+    pd.pins === nd.pins
+  )
+})

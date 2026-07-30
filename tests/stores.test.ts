@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { useProjectStore, coalesceUndo } from '../src/stores/projectStore'
+import { useProjectStore } from '../src/stores/projectStore'
 import type { Project, HarnessEndpoint, HarnessWire } from '../src/model/types'
 
 const emptyProject: Project = {

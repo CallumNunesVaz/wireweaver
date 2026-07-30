@@ -646,7 +646,8 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
         | HTMLElement
         | null
       if (!el) return
-      const dataUrl = await toPng(el, { backgroundColor: 'var(--color-bg)' })
+      const bg = getComputedStyle(document.documentElement).getPropertyValue('--color-bg').trim() || '#14161b'
+      const dataUrl = await toPng(el, { backgroundColor: bg })
       const link = document.createElement('a')
       link.download = `${harness?.name ?? 'harness'}.png`
       link.href = dataUrl
@@ -696,41 +697,34 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
     && selectedWires[0].twistedWith === selectedWires[1].id
     && selectedWires[1].twistedWith === selectedWires[0].id
 
-  // Wire context menu actions
-  const deleteSelectedWires = () => {
-    if (selectedWireIds.length === 0) return
-    setWires(harnessId, harness.wires.filter((w) => !selectedWireIds.includes(w.id)))
-    setSelectedWireIds([])
-    setPopupPos(null)
-    setWireMenu(null)
-  }
 
-  const editSelectedWire = () => {
-    setWireMenu(null)
-    setPopupPos({ x: 100, y: 100 })
-  }
-
-  const wireMenuItems: CtxItem[] = wireMenu ? [
-    ...(canTwist ? [{
-      label: areAlreadyTwisted ? 'Untwist pair' : 'Form twisted pair',
-      icon: areAlreadyTwisted ? <Unlink2 size={14} /> : <Link2 size={14} />,
-      onClick: () => {
-        toggleTwistedPair()
-        setWireMenu(null)
+  const wireMenuItems: CtxItem[] = useMemo(() => {
+    if (!wireMenu) return []
+    const items: CtxItem[] = [
+      {
+        label: 'Edit Wire',
+        icon: <Pencil size={14} />,
+        onClick: () => { setWireMenu(null); setPopupPos({ x: 100, y: 100 }) }
+      },
+      {
+        label: 'Delete',
+        icon: <Trash2 size={14} />,
+        danger: true,
+        onClick: () => {
+          setWires(harnessId, harness.wires.filter((w) => !selectedWireIds.includes(w.id)))
+          setSelectedWireIds([]); setPopupPos(null); setWireMenu(null)
+        }
       }
-    }] : []),
-    {
-      label: 'Edit Wire',
-      icon: <Pencil size={14} />,
-      onClick: editSelectedWire
-    },
-    {
-      label: 'Delete',
-      icon: <Trash2 size={14} />,
-      danger: true,
-      onClick: deleteSelectedWires
+    ]
+    if (canTwist) {
+      items.unshift({
+        label: areAlreadyTwisted ? 'Untwist pair' : 'Form twisted pair',
+        icon: areAlreadyTwisted ? <Unlink2 size={14} /> : <Link2 size={14} />,
+        onClick: () => { toggleTwistedPair(); setWireMenu(null) }
+      })
     }
-  ] : []
+    return items
+  }, [wireMenu, canTwist, areAlreadyTwisted, toggleTwistedPair, harnessId, harness.wires, selectedWireIds, setWires])
 
   return (
     <div className="fixed inset-0 z-30 flex flex-col bg-panel">
@@ -1066,7 +1060,7 @@ function WireEditPopup({ selectedWires, wireParts, pos, canTwist, areAlreadyTwis
 }) {
   const [open, setOpen] = useState(false)
   const onCloseRef = useRef(onClose)
-  onCloseRef.current = onClose
+  useEffect(() => { onCloseRef.current = onClose }, [onClose])
   useEffect(() => {
     const listener = (e: MouseEvent) => {
       const target = e.target as HTMLElement

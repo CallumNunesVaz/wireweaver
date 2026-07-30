@@ -31,7 +31,7 @@ export interface WiringRow {
 /** Display labels for a harness's wires: user label, else W1, W2, … in order. */
 export function wireLabels(harness: Harness): Map<string, string> {
   const labels = new Map<string, string>()
-  harness.wires.forEach((w, i) => labels.set(w.id, w.label || `W${i + 1}`))
+  harness.wires.forEach((w, i) => labels.set(w.id, w.label ?? `W${i + 1}`))
   return labels
 }
 
@@ -114,7 +114,7 @@ export function cutlist(lib: LibraryLike, project: Project, slackMm = 0): Cutlis
       const part = w.wirePartId ? lib.parts[w.wirePartId] : undefined
       const wirePart = part && isWire(part) ? part : undefined
       const length = segmentLengthMm(w, segMap)
-      const cut = length != null ? length + slackMm : undefined
+      const cut = length != null && isFinite(length) ? length + slackMm : undefined
       const row: CutlistRow = {
         wirePart: wirePart?.name ?? '(unspecified)',
         gauge: formatGauge(wirePart?.gauge),

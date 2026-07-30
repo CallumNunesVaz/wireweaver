@@ -265,7 +265,8 @@ describe('drc - placeholder parts', () => {
         }
       ],
       partSnapshots: {},
-      templateSnapshots: {}
+      templateSnapshots: {},
+      revisions: []
     }
     const issues = runDrc(
       {
@@ -395,7 +396,8 @@ describe('drc - current rating', () => {
         }
       ],
       partSnapshots: {},
-      templateSnapshots: {}
+      templateSnapshots: {},
+      revisions: []
     }
     const issues = runDrc(
       {
@@ -454,7 +456,8 @@ describe('drc - shield continuity', () => {
         }
       ],
       partSnapshots: {},
-      templateSnapshots: {}
+      templateSnapshots: {},
+      revisions: []
     }
     const issues = runDrc(
       {
@@ -534,7 +537,7 @@ describe('electrical calculators', () => {
   it('ampacityAwg returns reasonable values', () => {
     expect(ampacityAwg(22)).toBe(7)
     expect(ampacityAwg(10)).toBe(55)
-    expect(ampacityAwg(99)).toBe(0)
+    expect(ampacityAwg(99)).toBeNaN()
   })
 
   it('powerLost is voltageDrop × current', () => {

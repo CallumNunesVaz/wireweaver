@@ -1,3 +1,5 @@
+import { mm2ToAwg } from './wire'
+
 const RESISTANCE_MILLIOHM_PER_M: Record<number, number> = {
   0: 0.3224, 1: 0.4066, 2: 0.5127, 3: 0.6465, 4: 0.8152,
   5: 1.028, 6: 1.296, 7: 1.634, 8: 2.061, 9: 2.599,
@@ -22,15 +24,6 @@ const AMPACITY_CHASSIS: Record<number, number> = {
   40: 0.09
 }
 
-const MM2_TO_AWG: [number, number][] = [
-  [0.34, 22],
-  [0.5, 20],
-  [0.75, 18],
-  [1.0, 17],
-  [1.5, 15],
-  [2.5, 13]
-]
-
 export function voltageDrop(
   currentAmps: number,
   lengthMeters: number,
@@ -46,7 +39,7 @@ export function voltageDrop(
 
 export function ampacityAwg(gauge: number): number {
   if (!Number.isFinite(gauge) || gauge < 0) return NaN
-  return AMPACITY_CHASSIS[gauge] ?? 0
+  return AMPACITY_CHASSIS[gauge] ?? NaN
 }
 
 export function powerLost(voltageDrop: number, currentAmps: number): number {
@@ -61,9 +54,7 @@ export function parseAwg(gaugeString: string): number | null {
   const mm2Match = gaugeString.match(/^([\d.]+)\s*mm[2²]$/i)
   if (mm2Match) {
     const mm2 = parseFloat(mm2Match[1])
-    for (const [threshold, awg] of MM2_TO_AWG) {
-      if (mm2 <= threshold + 0.01) return awg
-    }
+    return mm2ToAwg(mm2)
   }
 
   return null

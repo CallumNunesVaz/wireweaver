@@ -344,8 +344,8 @@ export const useProjectStore = create<ProjectState>()(
             ...s,
             id: nanoid(),
             wireIds: s.wireIds.map((wid) => wireIds.get(wid) ?? wid)
-          })),
-          accessories: src.accessories?.map((a) => ({ ...a, id: nanoid() }))
+          })) ?? [],
+          accessories: src.accessories?.map((a) => ({ ...a, id: nanoid() })) ?? []
         }
         set((s) => ({
           project: {

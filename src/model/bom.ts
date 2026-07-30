@@ -146,7 +146,7 @@ export function toCsv(rows: BomRow[]): string {
         r.manufacturer,
         r.mpn,
         r.quantity,
-        formatMoney(r.cost),
+        formatMoney(r.cost ?? { amount: 0, currency: 'USD' }),
         ext,
         r.weightGrams ?? ''
       ]
@@ -167,11 +167,11 @@ export function toCsv(rows: BomRow[]): string {
 export async function exportBomCsv(
   project: Project,
   lib: LibraryLike
-): Promise<{ canceled: boolean; path?: string }> {
+): Promise<{ canceled: boolean; path?: string; error?: string }> {
   try {
     const csv = toCsv(buildBom(project, lib))
     return window.ww.bom.export(csv, `${project.name || 'wireweaver'}-bom.csv`)
-  } catch {
-    return { canceled: true }
+  } catch (e) {
+    return { canceled: false, error: e instanceof Error ? e.message : 'Unknown error' }
   }
 }

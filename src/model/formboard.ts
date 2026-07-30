@@ -113,18 +113,38 @@ export function generateFormboardLayout(
     }
   }
 
+  let lastX = 0
+  let lastY = 0
+  for (const n of nodes) {
+    lastX = Math.max(lastX, n.x)
+    lastY = Math.max(lastY, n.y)
+  }
+
   for (let i = 0; i < endpoints.length; i++) {
     const label = endLabel(i)
     const pos = placed.get(label)
-    if (!pos) continue
-    const re = resolved.get(label)
-    nodes.push({
-      x: Math.round(pos.x),
-      y: Math.round(pos.y),
-      label: re?.instance.label ?? label,
-      connectorName: re?.connector?.name ?? '(unknown)',
-      length: Math.round(pos.totalLength)
-    })
+    if (pos) {
+      const re = resolved.get(label)
+      nodes.push({
+        x: Math.round(pos.x),
+        y: Math.round(pos.y),
+        label: re?.instance.label ?? label,
+        connectorName: re?.connector?.name ?? '(unknown)',
+        length: Math.round(pos.totalLength)
+      })
+      lastX = Math.max(lastX, pos.x)
+      lastY = Math.max(lastY, pos.y)
+    } else {
+      const re = resolved.get(label)
+      lastY += SEPARATION
+      nodes.push({
+        x: Math.round(lastX),
+        y: Math.round(lastY),
+        label: re?.instance.label ?? label,
+        connectorName: re?.connector?.name ?? '(unknown)',
+        length: 0
+      })
+    }
   }
 
   return nodes

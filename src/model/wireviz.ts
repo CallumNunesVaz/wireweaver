@@ -106,7 +106,7 @@ export function wirevizYaml(lib: LibraryLike, project: Project, harness: Harness
         (s.fromEnd === g.a && s.toEnd === g.b) || (s.fromEnd === g.b && s.toEnd === g.a)
     )
     if (seg?.lengthMm != null) {
-      lines.push(`    length: ${Math.round(seg.lengthMm) / 1000}`) // WireViz uses meters
+      lines.push(`    length: ${(seg.lengthMm / 1000).toFixed(3)}`) // WireViz uses meters
     }
   }
 
