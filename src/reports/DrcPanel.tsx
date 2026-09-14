@@ -46,7 +46,7 @@ export function DrcPanel() {
   }
 
   return (
-    <aside className="fixed bottom-0 right-0 top-[49px] z-30 flex w-80 flex-col border-l border-edge bg-panel shadow-2xl">
+    <aside className="flex w-80 shrink-0 flex-col border-l border-edge bg-panel">
       <div className="flex items-center gap-2 border-b border-edge px-3 py-2">
         <ShieldCheck size={15} className="text-accent" />
         <span className="text-xs font-semibold uppercase tracking-wide">Design Rule Check</span>

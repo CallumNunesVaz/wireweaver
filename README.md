@@ -138,9 +138,15 @@ thumbnails are generated at import and used by library cards and canvas nodes, w
 
 ## Known follow-ups (not yet done)
 
-- Library list **virtualization**, `electron-builder` packaging config, and a Playwright
-  smoke test (per plan M5).
-- Multi-branch harnesses, part-vs-snapshot **reconciliation UI** (snapshots are written on
-  save and merged in on open when the library lacks them, but "part differs from library"
-  diffing is not built).
-- FX currency conversion (BOM totals are summed per currency).
+- **Bundled content packs**: the Packs browser and the `data/` packaging hook exist, but
+  `data/` is gitignored, so the `.wwlib` packs must be regenerated (`scripts/import-*`) or
+  committed before a packaged build ships them.
+- **Part-vs-snapshot reconciliation diffing**: snapshots are written on save and merged in
+  on open when the library lacks them, but a "this part differs from the library"
+  review/merge UI is not built.
+- **Subassemblies** are saved reusable harnesses matched to placed devices by port id;
+  true nested-assembly instantiation (a subassembly as a device owning its own internal
+  wiring) is not implemented.
+- **UI tests**: model/store/API logic is covered by Vitest; canvas interactions rely on
+  the opt-in Playwright smoke test (`WW_E2E=1`, requires Playwright and a build).
+- **FX conversion** is offered in the Reports modal; the BOM CSV still sums per currency.

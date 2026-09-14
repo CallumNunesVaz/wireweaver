@@ -24,7 +24,9 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 
 const isE2E = process.env['WW_E2E'] === '1' || process.env['RUN_E2E'] === '1'
 
-describe('WireWeaver smoke test (E2E)', () => {
+// Skipped (not silently passing) unless E2E is explicitly enabled, so the
+// default unit run reports these honestly rather than as green no-ops.
+describe.skipIf(!isE2E)('WireWeaver smoke test (E2E)', () => {
   let app: any
   let page: any
   let h: any

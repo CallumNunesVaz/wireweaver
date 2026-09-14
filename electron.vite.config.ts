@@ -55,7 +55,26 @@ export default defineConfig({
     },
     build: {
       rollupOptions: {
-        input: { index: resolve('index.html') }
+        input: { index: resolve('index.html') },
+        output: {
+          // Split the largest third-party libraries into their own chunks so
+          // the entry bundle stays small and vendor code caches across builds.
+          manualChunks(id: string) {
+            if (!id.includes('/node_modules/')) return undefined
+            if (id.includes('@xyflow')) return 'xyflow'
+            if (id.includes('/dagre/') || id.includes('/graphlib/')) return 'dagre'
+            if (id.includes('/fuse.js/')) return 'fuse'
+            if (id.includes('/yaml/')) return 'yaml'
+            if (
+              id.includes('/react/') ||
+              id.includes('/react-dom/') ||
+              id.includes('/scheduler/')
+            ) {
+              return 'react'
+            }
+            return undefined
+          }
+        }
       }
     },
     plugins: [react(), injectCsp()]

@@ -636,6 +636,13 @@ export default function App() {
             )}
           </main>
           <Inspector />
+          {drcOpen && (
+            <Suspense fallback={null}>
+              <ErrorBoundary>
+                <DrcPanel />
+              </ErrorBoundary>
+            </Suspense>
+          )}
         </div>
       </div>
 
@@ -655,11 +662,6 @@ export default function App() {
         {reportsOpen && (
           <ErrorBoundary>
             <ReportsModal />
-          </ErrorBoundary>
-        )}
-        {drcOpen && (
-          <ErrorBoundary>
-            <DrcPanel />
           </ErrorBoundary>
         )}
         {revisionsOpen && (
