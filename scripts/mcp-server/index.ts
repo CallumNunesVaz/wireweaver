@@ -676,7 +676,8 @@ const TOOLS: Record<string, ToolDef> = {
 
 interface JsonRpcRequest {
   jsonrpc: '2.0'
-  id: number | string
+  /** Absent for notifications, which must never be answered. */
+  id?: number | string | null
   method: string
   params?: Record<string, unknown>
 }
@@ -743,6 +744,10 @@ async function main(): Promise<void> {
       )
       continue
     }
+
+    // Notifications (no id) get no response — replying to them, even with an
+    // error, is a JSON-RPC violation that MCP clients reject.
+    if (msg.id === undefined || msg.id === null) continue
 
     try {
       if (msg.method === 'initialize') {

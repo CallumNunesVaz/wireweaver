@@ -186,12 +186,12 @@ export default function App() {
     autosaveTimer.current = setTimeout(() => {
       const lib = useLibraryStore.getState()
       const data = withSnapshots(project, lib.parts, lib.templates)
-      window.ww.project.autosave(data).catch(() => {})
+      window.ww.project.autosave(data, filePath).catch(() => {})
     }, 3000)
     return () => {
       if (autosaveTimer.current) clearTimeout(autosaveTimer.current)
     }
-  }, [project, dirty])
+  }, [project, dirty, filePath])
 
   // Offer to recover an autosaved session once the library has loaded.
   useEffect(() => {
@@ -205,14 +205,24 @@ export default function App() {
         const ok = await confirmDialog({
           title: 'Recover unsaved work?',
           message: `An autosaved session from ${when} was found.`,
-          detail: 'Recover it now? This replaces the current untitled project.',
+          detail: rec.path
+            ? `Unsaved changes to:\n${rec.path}\n\nRecover them now?`
+            : 'Recover it now? This replaces the current untitled project.',
           confirmLabel: 'Recover',
           cancelLabel: 'Discard'
         })
         if (ok) {
-          loadProject(rec.data, undefined)
+          // Keep the original file association so Ctrl+S writes back to it.
+          loadProject(rec.data, rec.path)
           useProjectStore.temporal.getState().clear()
           markDirty()
+          // Same library reconciliation as a normal open — the autosave
+          // carries snapshots of parts the library may no longer have.
+          const lib = useLibraryStore.getState()
+          const missing = missingFromLibrary(rec.data, lib.parts, lib.templates)
+          if (missing.parts.length > 0 || missing.templates.length > 0) {
+            useUiStore.getState().setReconciliation(missing)
+          }
           toast('Recovered autosaved project.', 'success')
         } else {
           await window.ww.project.clearRecovery()

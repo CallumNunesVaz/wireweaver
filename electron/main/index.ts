@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, protocol } from 'electron'
 import { join, extname, relative, isAbsolute, basename } from 'node:path'
-import { promises as fs } from 'node:fs'
+import { promises as fs, rmSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 
 const isDev = !app.isPackaged
@@ -218,6 +218,8 @@ function createWindow(): void {
       })
       if (choice === 1) return
       projectDirty = false
+      // The user chose to discard, so don't offer this work back on next launch.
+      rmSync(recoveryFile(), { force: true })
       mainWindow!.close()
     }
   })
@@ -356,18 +358,25 @@ async function registerIpc(): Promise<void> {
 
   // Crash recovery: a rolling autosave outside the library so unsaved work
   // survives a hard quit. Cleared on explicit save / new / open.
-  ipcMain.handle('project:autosave', async (_e, data: unknown) => {
-    await writeJsonAtomic(recoveryFile(), { savedAt: Date.now(), data })
-    return true
-  })
+  ipcMain.handle(
+    'project:autosave',
+    async (_e, args: { data: unknown; path?: string }) => {
+      await writeJsonAtomic(recoveryFile(), {
+        savedAt: Date.now(),
+        data: args.data,
+        path: args.path
+      })
+      return true
+    }
+  )
 
   ipcMain.handle('project:getRecovery', async () => {
-    const rec = await readJson<{ savedAt: number; data: unknown } | null>(
+    const rec = await readJson<{ savedAt: number; data: unknown; path?: string } | null>(
       recoveryFile(),
       null
     )
     if (!rec || !rec.data) return { exists: false }
-    return { exists: true, savedAt: rec.savedAt, data: rec.data }
+    return { exists: true, savedAt: rec.savedAt, data: rec.data, path: rec.path }
   })
 
   ipcMain.handle('project:clearRecovery', async () => {

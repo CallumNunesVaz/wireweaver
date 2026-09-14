@@ -43,9 +43,14 @@ describe('colour codes', () => {
 })
 
 describe('gauge edge cases', () => {
-  it('returns NaN / null for non-positive values', () => {
-    expect(Number.isNaN(awgToMm2(0))).toBe(true)
+  it('returns NaN / null for invalid values', () => {
+    expect(Number.isNaN(awgToMm2(-1))).toBe(true)
+    expect(Number.isNaN(awgToMm2(NaN))).toBe(true)
     expect(mm2ToAwg(0)).toBeNull()
+  })
+
+  it('handles 0 AWG (1/0), which the calculator offers', () => {
+    expect(awgToMm2(0)).toBeCloseTo(53.5, 0)
   })
 
   it('passes unknown gauge strings through', () => {

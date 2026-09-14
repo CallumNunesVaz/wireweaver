@@ -86,11 +86,13 @@ interface WwApi {
     open: () => Promise<ProjectOpenResult>
     openPath: (path: string) => Promise<ProjectOpenResult>
     setDirty: (dirty: boolean) => Promise<void>
-    autosave: (data: Project) => Promise<boolean>
+    autosave: (data: Project, path?: string) => Promise<boolean>
     getRecovery: () => Promise<{
       exists: boolean
       savedAt?: number
       data?: Project
+      /** File the project was last saved to, if any. */
+      path?: string
     }>
     clearRecovery: () => Promise<boolean>
   }

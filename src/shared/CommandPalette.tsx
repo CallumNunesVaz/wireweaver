@@ -27,6 +27,17 @@ export function CommandPalette({ commands }: { commands: Command[] }) {
   useEffect(() => setIndex(0), [query])
 
   useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      close()
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [close])
+
+  useEffect(() => {
     const el = listRef.current?.querySelector<HTMLElement>('[data-active="true"]')
     el?.scrollIntoView({ block: 'nearest' })
   }, [index])

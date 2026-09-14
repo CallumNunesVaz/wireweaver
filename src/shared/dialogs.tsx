@@ -27,19 +27,26 @@ type DialogRequest =
 
 interface DialogState {
   current: DialogRequest | null
+  /** Requests made while another dialog is showing; shown in order. */
+  pending: DialogRequest[]
   open: (r: DialogRequest) => void
   close: (result: boolean | string | null) => void
 }
 
 const useDialogStore = create<DialogState>((set, get) => ({
   current: null,
-  open: (current) => set({ current }),
+  pending: [],
+  open: (r) => {
+    const { current, pending } = get()
+    if (current) set({ pending: [...pending, r] })
+    else set({ current: r })
+  },
   close: (result) => {
-    const cur = get().current
+    const { current: cur, pending } = get()
     if (!cur) return
     if (cur.kind === 'confirm') cur.resolve(result === true)
     else cur.resolve(typeof result === 'string' ? result : null)
-    set({ current: null })
+    set({ current: pending[0] ?? null, pending: pending.slice(1) })
   }
 }))
 
@@ -74,6 +81,10 @@ export function DialogHost() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault()
+        // Parent overlays (Modal, LibraryManager, HarnessEditor) also listen
+        // for Escape on window; this dialog is the innermost layer, so it
+        // must consume the key or cancelling a prompt closes its host too.
+        e.stopImmediatePropagation()
         close(current.kind === 'confirm' ? false : null)
       }
     }
@@ -110,7 +121,9 @@ export function DialogHost() {
         <div className="space-y-3 p-4">
           {opts.message && <div className="text-xs">{opts.message}</div>}
           {isConfirm && (opts as ConfirmOptions).detail && (
-            <div className="text-[11px] text-muted">{(opts as ConfirmOptions).detail}</div>
+            <div className="whitespace-pre-line text-[11px] text-muted">
+              {(opts as ConfirmOptions).detail}
+            </div>
           )}
           {!isConfirm && (
             <div>

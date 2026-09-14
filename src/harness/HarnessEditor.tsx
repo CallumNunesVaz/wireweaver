@@ -742,9 +742,15 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
     if (!wireMenu) return []
     const items: CtxItem[] = [
       {
-        label: 'Edit Wire',
+        // The popup handles one wire (or a twisted pair); anything larger
+        // goes to the bulk panel rather than silently editing the first wire.
+        label: selectedWireIds.length > 2 ? `Edit ${selectedWireIds.length} Wires` : 'Edit Wire',
         icon: <Pencil size={14} />,
-        onClick: () => { setWireMenu(null); setPopupPos({ x: 100, y: 100 }) }
+        onClick: () => {
+          setWireMenu(null)
+          if (selectedWireIds.length > 2) setBulkOpen(true)
+          else setPopupPos({ x: 100, y: 100 })
+        }
       },
       {
         label: 'Delete',

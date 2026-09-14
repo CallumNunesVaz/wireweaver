@@ -74,7 +74,7 @@ or `{ device, port, position }` (labels); referencing a new port auto-adds the e
 The API also covers accessories, splices, subassemblies, revisions, BOM, and WireViz
 import/export. See `tests/api.test.ts` for runnable examples.
 
-The same API backs an MCP server (42 tools: parts/templates, devices, harness CRUD,
+The same API backs an MCP server (43 tools: parts/templates, devices, harness CRUD,
 pin-level wiring, validation, reports, revisions) for AI agents:
 
 ```bash

@@ -25,7 +25,8 @@ const api = {
     open: () => ipcRenderer.invoke('project:open'),
     openPath: (path: string) => ipcRenderer.invoke('project:openPath', path),
     setDirty: (dirty: boolean) => ipcRenderer.invoke('project:setDirty', dirty),
-    autosave: (data: unknown) => ipcRenderer.invoke('project:autosave', data),
+    autosave: (data: unknown, path?: string) =>
+      ipcRenderer.invoke('project:autosave', { data, path }),
     getRecovery: () => ipcRenderer.invoke('project:getRecovery'),
     clearRecovery: () => ipcRenderer.invoke('project:clearRecovery')
   },
