@@ -17,16 +17,19 @@ import {
   Copy,
   Filter,
   RotateCcw,
-  FolderSync
+  FolderSync,
+  PackagePlus
 } from 'lucide-react'
 import { nanoid } from 'nanoid'
 import { Virtuoso } from 'react-virtuoso'
-import { useLibraryStore } from '../stores/libraryStore'
+import { useLibraryStore, selectLibraryLike } from '../stores/libraryStore'
+import { importWireViz } from '../model/wireviz-import'
 import { useProjectStore } from '../stores/projectStore'
 import { useUiStore } from '../stores/uiStore'
 import { findPartReferences, findTemplateReferences } from '../model/references'
 import { fuzzySearch } from './FuzzySearch'
 import { toast } from '../shared/toast'
+import { confirmDialog } from '../shared/dialogs'
 import { imageUrl, fileToDataUrl, makeThumbDataUrl } from '../shared/useImage'
 import { CURRENCIES } from '../model/currency'
 import { ContextMenu } from '../shared/ContextMenu'
@@ -85,6 +88,11 @@ export function LibraryManager() {
   const [menu, setMenu] = useState<{ x: number; y: number; selection: LibraryItem } | null>(null)
   const [editorDraft, setEditorDraft] = useState<Part | null>(null)
   const [templateDraft, setTemplateDraft] = useState<PinoutTemplate | null>(null)
+  const [packsOpen, setPacksOpen] = useState(false)
+  const [packs, setPacks] = useState<
+    { id: string; name: string; parts: number; templates: number }[]
+  >([])
+  const [installingPack, setInstallingPack] = useState<string | null>(null)
 
   // Filter parts with fuzzy search
   const filteredParts = useMemo(() => {
@@ -204,7 +212,7 @@ export function LibraryManager() {
   }
 
   // Bulk delete
-  const bulkDelete = () => {
+  const bulkDelete = async () => {
     const names: string[] = []
     for (const id of checked) {
       const p = parts.find((x) => x.id === id)
@@ -213,7 +221,15 @@ export function LibraryManager() {
       else if (t) names.push(t.name)
     }
     if (names.length === 0) return
-    if (!window.confirm(`Delete ${names.length} item(s)?\n\n${names.slice(0, 10).join('\n')}${names.length > 10 ? `\n... and ${names.length - 10} more` : ''}`)) return
+    const detail = `${names.slice(0, 10).join(', ')}${names.length > 10 ? ` … and ${names.length - 10} more` : ''}`
+    const ok = await confirmDialog({
+      title: 'Delete items',
+      message: `Delete ${names.length} item(s)?`,
+      detail,
+      confirmLabel: 'Delete',
+      danger: true
+    })
+    if (!ok) return
     for (const id of checked) {
       const p = parts.find((x) => x.id === id)
       if (p) removePart(id)
@@ -262,6 +278,83 @@ export function LibraryManager() {
     toast(`Imported ${addedParts} part(s) and ${addedTemplates} template(s).`, 'success')
   }, [])
 
+  const handleWirevizImport = useCallback(async () => {
+    try {
+      const res = await window.ww.file.readText({
+        filterName: 'WireViz YAML',
+        extensions: ['yml', 'yaml']
+      })
+      if (res.canceled || !res.content) return
+      const lib = useLibraryStore.getState()
+      const imported = importWireViz(res.content, selectLibraryLike(lib))
+      let addedParts = 0
+      let addedTemplates = 0
+      for (const t of imported.templates) {
+        if (!lib.templates.find((x) => x.id === t.id)) {
+          lib.upsertTemplate(t)
+          addedTemplates++
+        }
+      }
+      for (const p of imported.parts) {
+        if (!lib.parts.find((x) => x.id === p.id)) {
+          lib.upsertPart(p)
+          addedParts++
+        }
+      }
+      if (addedParts === 0 && addedTemplates === 0) {
+        toast('WireViz import: nothing new to add.', 'info')
+      } else {
+        toast(`WireViz import: ${addedParts} part(s), ${addedTemplates} template(s).`, 'success')
+      }
+    } catch (err) {
+      toast(
+        `WireViz import failed: ${err instanceof Error ? err.message : String(err)}`,
+        'error'
+      )
+    }
+  }, [])
+
+  // Bundled starter packs.
+  useEffect(() => {
+    if (!packsOpen) return
+    window.ww.library
+      .listPacks()
+      .then(setPacks)
+      .catch(() => setPacks([]))
+  }, [packsOpen])
+
+  const installPack = useCallback(async (packId: string) => {
+    setInstallingPack(packId)
+    try {
+      const res = await window.ww.library.readPack(packId)
+      const data = res.data
+      if (!data) {
+        toast(`Could not read pack "${packId}".`, 'error')
+        return
+      }
+      const lib = useLibraryStore.getState()
+      let addedParts = 0
+      let addedTemplates = 0
+      for (const t of data.templates ?? []) {
+        if (t && typeof t.id === 'string' && !lib.templates.find((x) => x.id === t.id)) {
+          lib.upsertTemplate(t)
+          addedTemplates++
+        }
+      }
+      for (const p of data.parts ?? []) {
+        if (p && typeof p.id === 'string' && !lib.parts.find((x) => x.id === p.id)) {
+          lib.upsertPart(p)
+          addedParts++
+        }
+      }
+      toast(`Installed pack: ${addedParts} part(s), ${addedTemplates} template(s).`, 'success')
+    } catch (err) {
+      toast(`Pack install failed: ${err instanceof Error ? err.message : String(err)}`, 'error')
+    } finally {
+      setInstallingPack(null)
+    }
+  }, [])
+
   // Database folder management
   const handleChangeDb = useCallback(async () => {
     const path = await window.ww.library.choosePath()
@@ -270,9 +363,13 @@ export function LibraryManager() {
     // If old path is default and has content, offer to relocate.
     const needsRelocate = oldPath && oldPath !== path
     if (needsRelocate) {
-      const move = window.confirm(
-        `Copy existing library data from:\n${oldPath}\n\nto:\n${path}\n\nClick OK to copy, Cancel to switch without copying.`
-      )
+      const move = await confirmDialog({
+        title: 'Relocate library',
+        message: 'Copy existing library data to the new folder?',
+        detail: `From: ${oldPath}\nTo: ${path}\n\nChoose “Copy” to move your data, or “Switch” to use the new folder as-is.`,
+        confirmLabel: 'Copy',
+        cancelLabel: 'Switch'
+      })
       if (move) {
         await relocateLibrary(path)
       } else {
@@ -288,7 +385,7 @@ export function LibraryManager() {
   const savePart = () => {
     if (!editorDraft) return
     if (!editorDraft.name.trim()) {
-      window.alert('Please give the part a name.')
+      toast('Please give the part a name.', 'error')
       return
     }
     upsertPart(editorDraft)
@@ -299,7 +396,7 @@ export function LibraryManager() {
   const saveTemplate = () => {
     if (!templateDraft) return
     if (!templateDraft.name.trim()) {
-      window.alert('Please name the template.')
+      toast('Please name the template.', 'error')
       return
     }
     upsertTemplate(templateDraft)
@@ -334,8 +431,22 @@ export function LibraryManager() {
           <button className="ww-btn" onClick={handleChangeDb} title="Change library database folder…">
             <FolderSync size={14} /> DB
           </button>
+          <button
+            className={`ww-btn ${packsOpen ? 'border-accent text-accent' : ''}`}
+            onClick={() => setPacksOpen((o) => !o)}
+            title="Browse bundled starter packs"
+          >
+            <PackagePlus size={14} /> Packs
+          </button>
           <button className="ww-btn" onClick={handleImport} title="Import library (.wwlib)">
             <Upload size={14} /> Import
+          </button>
+          <button
+            className="ww-btn"
+            onClick={handleWirevizImport}
+            title="Import parts & templates from a WireViz YAML file"
+          >
+            <Upload size={14} /> WireViz
           </button>
           <button className="ww-btn" onClick={handleExport} title="Export library (.wwlib)">
             <Download size={14} /> Export
@@ -420,6 +531,44 @@ export function LibraryManager() {
           </div>
         )}
       </div>
+
+      {/* Starter content packs */}
+      {packsOpen && (
+        <div className="border-b border-edge bg-panelalt px-3 py-2">
+          <div className="mb-1 flex items-center gap-2 text-[10px] uppercase tracking-wide text-muted">
+            <PackagePlus size={12} /> Bundled starter packs
+            <span className="ml-auto normal-case tracking-normal">
+              {packs.length} pack{packs.length === 1 ? '' : 's'}
+            </span>
+          </div>
+          {packs.length === 0 ? (
+            <div className="text-[11px] text-muted">No bundled packs found.</div>
+          ) : (
+            <div className="grid grid-cols-2 gap-1.5 md:grid-cols-3">
+              {packs.map((p) => (
+                <div
+                  key={p.id}
+                  className="flex items-center gap-2 rounded border border-edge bg-panel px-2 py-1.5 text-xs"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-medium capitalize">{p.name}</div>
+                    <div className="text-[10px] text-muted">
+                      {p.parts} parts · {p.templates} templates
+                    </div>
+                  </div>
+                  <button
+                    className="ww-btn shrink-0"
+                    disabled={installingPack === p.id}
+                    onClick={() => installPack(p.id)}
+                  >
+                    {installingPack === p.id ? '…' : 'Install'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Body */}
       <div className="flex min-h-0 flex-1">
@@ -632,9 +781,18 @@ export function LibraryManager() {
               draft={templateDraft}
               setDraft={setTemplateDraft}
               onSave={saveTemplate}
-              onDelete={() => {
+              onDelete={async () => {
                 const refs = findTemplateReferences(selection.id, parts)
-                if (refs.length > 0 && !window.confirm(`This template is used by: ${refs.join(', ')}.\nDelete anyway?`)) return
+                if (refs.length > 0) {
+                  const ok = await confirmDialog({
+                    title: 'Delete template',
+                    message: `This template is used by: ${refs.join(', ')}.`,
+                    detail: 'Deleting it will break those ports.',
+                    confirmLabel: 'Delete anyway',
+                    danger: true
+                  })
+                  if (!ok) return
+                }
                 removeTemplate(selection.id)
                 setSelection(null)
               }}
@@ -645,11 +803,20 @@ export function LibraryManager() {
               draft={editorDraft}
               setDraft={setEditorDraft}
               onSave={savePart}
-              onDelete={() => {
+              onDelete={async () => {
                 if (!editorDraft) return
                 const proj = useProjectStore.getState().project
                 const refs = findPartReferences(editorDraft.id, parts, templates, proj)
-                if (refs.length > 0 && !window.confirm(`This part is used by: ${refs.join(', ')}.\nDelete anyway?`)) return
+                if (refs.length > 0) {
+                  const ok = await confirmDialog({
+                    title: 'Delete part',
+                    message: `This part is used by: ${refs.join(', ')}.`,
+                    detail: 'Deleting it may leave dangling references.',
+                    confirmLabel: 'Delete anyway',
+                    danger: true
+                  })
+                  if (!ok) return
+                }
                 removePart(editorDraft.id)
                 setSelection(null)
               }}
@@ -684,9 +851,18 @@ export function LibraryManager() {
                   label: 'Delete',
                   icon: <Trash2 size={14} />,
                   danger: true,
-                  onClick: () => {
+                  onClick: async () => {
                     const refs = findTemplateReferences(menu.selection.id, parts)
-                    if (refs.length > 0 && !window.confirm(`Used by: ${refs.join(', ')}.\nDelete anyway?`)) return
+                    if (refs.length > 0) {
+                      const ok = await confirmDialog({
+                        title: 'Delete template',
+                        message: `Used by: ${refs.join(', ')}.`,
+                        detail: 'Deleting it will break those ports.',
+                        confirmLabel: 'Delete anyway',
+                        danger: true
+                      })
+                      if (!ok) return
+                    }
                     removeTemplate(menu.selection.id)
                     setSelection(null)
                   }
@@ -712,12 +888,21 @@ export function LibraryManager() {
                 label: 'Delete',
                 icon: <Trash2 size={14} />,
                 danger: true,
-                onClick: () => {
+                onClick: async () => {
                   const p = parts.find((x) => x.id === partId)
                   if (!p) return
                   const proj = useProjectStore.getState().project
                   const refs = findPartReferences(p.id, parts, templates, proj)
-                  if (refs.length > 0 && !window.confirm(`Used by: ${refs.join(', ')}.\nDelete anyway?`)) return
+                  if (refs.length > 0) {
+                    const ok = await confirmDialog({
+                      title: 'Delete part',
+                      message: `Used by: ${refs.join(', ')}.`,
+                      detail: 'Deleting it may leave dangling references.',
+                      confirmLabel: 'Delete anyway',
+                      danger: true
+                    })
+                    if (!ok) return
+                  }
                   removePart(p.id)
                   setSelection(null)
                 }

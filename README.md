@@ -28,6 +28,60 @@ On first launch the library is empty, so WireWeaver seeds a small starter set (a
 Controller, a CAN sensor, a JST GH 4-pos connector, a 28 AWG wire, and a "CAN + Power"
 pinout template) so you can try the flow immediately.
 
+## Programmatic API & MCP
+
+`src/model/api.ts` is a pure, framework-free API for creating and editing harnesses
+from code. It is the single source of truth shared by the app and the MCP server
+(`scripts/mcp-server/index.ts`), and has no DOM/Electron/fs dependencies — hosts own
+persistence.
+
+```ts
+import * as api from './src/model/api'
+
+const ws = api.createWorkspace('Demo')
+const conn = api.createConnectorPart(ws, { name: 'JST GH 4', positions: 4 })
+const tpl = api.createPinoutTemplate(ws, {
+  name: 'CAN + Power',
+  connectorPartId: conn.id,
+  pins: [
+    { position: 1, signal: '5V', signalClass: 'power' },
+    { position: 2, signal: 'CAN_H', signalClass: 'data' },
+    { position: 3, signal: 'CAN_L', signalClass: 'data' },
+    { position: 4, signal: 'GND', signalClass: 'ground' }
+  ]
+})
+const fc = api.createDevicePart(ws, { name: 'FC', ports: [{ name: 'CAN A', pinoutTemplateId: tpl.id }] })
+const sensor = api.createDevicePart(ws, { name: 'Sensor', ports: [{ name: 'CAN', pinoutTemplateId: tpl.id }] })
+api.addDevice(ws, { partId: fc.id, label: 'FC' })
+api.addDevice(ws, { partId: sensor.id, label: 'Sensor' })
+
+// Create a harness, auto-wire matching signals, add a length.
+const h = api.createHarness(ws, {
+  name: 'CAN Bus',
+  ports: [{ device: 'FC', port: 'CAN A' }, { device: 'Sensor', port: 'CAN' }]
+})
+api.autoWire(ws, h.id)
+api.addSegment(ws, h.id, { from: 'a', to: 'b', lengthMm: 250 })
+
+// Validate, report, and persist.
+console.log(api.validate(ws))
+console.log(api.wiringTable(ws), api.cutlist(ws, 50), api.netlist(ws))
+fs.writeFileSync('demo.wwv', JSON.stringify(api.serializeWorkspace(ws), null, 2))
+```
+
+Wires can be addressed by `{ end, position }`, `{ deviceInstanceId, portId, position }`,
+or `{ device, port, position }` (labels); referencing a new port auto-adds the endpoint.
+The API also covers accessories, splices, subassemblies, revisions, BOM, and WireViz
+import/export. See `tests/api.test.ts` for runnable examples.
+
+The same API backs an MCP server (42 tools: parts/templates, devices, harness CRUD,
+pin-level wiring, validation, reports, revisions) for AI agents:
+
+```bash
+npm run mcp -- --help                      # usage
+npm run mcp -- path/to/project.wwv         # load a project, then speak MCP on stdio
+```
+
 ## What's in this prototype
 
 - **Three-pane shell** — collapsible Library, Assembly View (React Flow with dot

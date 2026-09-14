@@ -11,25 +11,32 @@ import {
   Copy,
   Trash2,
   Cable,
-  Plug
+  Plug,
+  Boxes
 } from 'lucide-react'
 import { Virtuoso } from 'react-virtuoso'
-import { useLibraryStore } from '../stores/libraryStore'
+import { useLibraryStore, selectLibraryLike } from '../stores/libraryStore'
 import { useProjectStore } from '../stores/projectStore'
 import { useUiStore, type LibraryCategory } from '../stores/uiStore'
 import { findPartReferences, findTemplateReferences } from '../model/references'
 import { fuzzySearch } from './FuzzySearch'
-import type { Part, PartKind } from '../model/types'
+import type { Part, PartKind, SubassemblyPart } from '../model/types'
 import { imageUrl } from '../shared/useImage'
 import { ContextMenu, type CtxItem } from '../shared/ContextMenu'
+import { instantiateSubassemblyHarness } from '../model/subassembly'
+import { toast } from '../shared/toast'
 
 const CATEGORY_META: {
   key: LibraryCategory
   label: string
   icon: typeof Cpu
+  canCreate: boolean
 }[] = [
-  { key: 'device', label: 'Devices', icon: Cpu },
-  { key: 'pinout', label: 'Pinout Templates', icon: ListTree }
+  { key: 'device', label: 'Devices', icon: Cpu, canCreate: true },
+  { key: 'connector', label: 'Connectors', icon: Plug, canCreate: true },
+  { key: 'wire', label: 'Wires', icon: Cable, canCreate: true },
+  { key: 'subassembly', label: 'Subassemblies', icon: Boxes, canCreate: false },
+  { key: 'pinout', label: 'Pinout Templates', icon: ListTree, canCreate: true }
 ]
 
 type FilterPill = 'all' | PartKind
@@ -38,7 +45,8 @@ const FILTER_PILLS: { key: FilterPill; label: string; icon: typeof Cpu }[] = [
   { key: 'all', label: 'All', icon: Cpu },
   { key: 'device', label: 'Devices', icon: Cpu },
   { key: 'connector', label: 'Connectors', icon: Plug },
-  { key: 'wire', label: 'Wires', icon: Cable }
+  { key: 'wire', label: 'Wires', icon: Cable },
+  { key: 'subassembly', label: 'Subassemblies', icon: Boxes }
 ]
 
 export function LibraryPane() {
@@ -109,7 +117,7 @@ export function LibraryPane() {
       </div>
 
       <div className="min-h-0 flex-1">
-        {CATEGORY_META.map(({ key, label, icon: Icon }) => {
+        {CATEGORY_META.map(({ key, label, icon: Icon, canCreate }) => {
           const isOpen = !collapsed[key]
           const items = key === 'pinout' ? templateMatches : grouped[key as PartKind]
           return (
@@ -128,17 +136,19 @@ export function LibraryPane() {
                   </span>
                   <span className="text-[10px] text-muted">({items.length})</span>
                 </button>
-                <button
-                  className="rounded p-0.5 text-muted hover:bg-edge hover:text-ink"
-                  title={`New ${label.replace(/s$/, '')}`}
-                  onClick={() =>
-                    key === 'pinout'
-                      ? openTemplateEditor(null)
-                      : openPartEditor({ kind: key as PartKind })
-                  }
-                >
-                  <Plus size={15} />
-                </button>
+                {canCreate && (
+                  <button
+                    className="rounded p-0.5 text-muted hover:bg-edge hover:text-ink"
+                    title={`New ${label.replace(/s$/, '')}`}
+                    onClick={() =>
+                      key === 'pinout'
+                        ? openTemplateEditor(null)
+                        : openPartEditor({ kind: key as PartKind })
+                    }
+                  >
+                    <Plus size={15} />
+                  </button>
+                )}
               </div>
 
               {isOpen && items.length > 0 && (
@@ -152,6 +162,9 @@ export function LibraryPane() {
                       return <TemplateCardListItem id={t.id} name={t.name} />
                     }
                     if ('kind' in item) {
+                      if ((item as Part).kind === 'subassembly') {
+                        return <SubassemblyCardListItem part={item as SubassemblyPart} />
+                      }
                       return <PartCardListItem part={item as Part} />
                     }
                     return null
@@ -236,6 +249,67 @@ function PartCardListItem({ part }: { part: Part }) {
           <div className="truncate text-xs font-medium">{part.name}</div>
           <div className="truncate text-[10px] text-muted">
             {part.internalPartNumber || part.manufacturerPartNumber || '—'}
+          </div>
+        </div>
+      </div>
+      {menu && (
+        <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />
+      )}
+    </>
+  )
+}
+
+function SubassemblyCardListItem({ part }: { part: SubassemblyPart }) {
+  const removePart = useLibraryStore((s) => s.removePart)
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  const wires = part.harness?.wires?.length ?? 0
+  const ends = part.harness?.endpoints?.length ?? 0
+
+  const insert = () => {
+    const lib = selectLibraryLike(useLibraryStore.getState())
+    const instances = useProjectStore.getState().project.deviceInstances
+    const { harness, matched, missing } = instantiateSubassemblyHarness(lib, instances, part)
+    if (!harness) {
+      toast('Cannot insert: no placed devices match its ports.', 'error')
+      return
+    }
+    const id = useProjectStore.getState().importHarness(harness)
+    useUiStore.getState().select({ type: 'harness', id })
+    toast(
+      `Inserted "${part.name}" — ${matched} endpoint(s)${
+        missing ? `, ${missing} unmatched` : ''
+      }.`,
+      'success'
+    )
+  }
+
+  const menuItems: CtxItem[] = [
+    { label: 'Insert into project', icon: <Plus size={14} />, onClick: insert },
+    {
+      label: 'Delete',
+      icon: <Trash2 size={14} />,
+      danger: true,
+      onClick: () => removePart(part.id)
+    }
+  ]
+
+  return (
+    <>
+      <div
+        className="flex cursor-pointer items-center gap-2 rounded border border-edge bg-panelalt
+          px-2 py-1.5 hover:border-accent"
+        onClick={insert}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          setMenu({ x: e.clientX, y: e.clientY })
+        }}
+        title="Click to insert this subassembly's harness into the project"
+      >
+        <Boxes size={14} className="shrink-0 text-accent" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-xs font-medium">{part.name}</div>
+          <div className="truncate text-[10px] text-muted">
+            {ends} ends · {wires} wires
           </div>
         </div>
       </div>

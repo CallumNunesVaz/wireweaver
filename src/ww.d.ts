@@ -38,6 +38,18 @@ interface RecentEntry {
   openedAt: number
 }
 
+interface LibraryPackInfo {
+  id: string
+  name: string
+  parts: number
+  templates: number
+}
+
+interface LibraryPackResult {
+  id: string
+  data?: { parts?: Part[]; templates?: PinoutTemplate[] } | null
+}
+
 interface PartSearchResult {
   id: string
   kind: string
@@ -60,6 +72,8 @@ interface WwApi {
     setPath: (path: string) => Promise<string>
     relocatePath: (path: string) => Promise<string>
     choosePath: () => Promise<string | null>
+    listPacks: () => Promise<LibraryPackInfo[]>
+    readPack: (id: string) => Promise<LibraryPackResult>
   }
   image: {
     import: (dataUrl: string, thumbDataUrl?: string) => Promise<ImageImportResult>
@@ -72,6 +86,13 @@ interface WwApi {
     open: () => Promise<ProjectOpenResult>
     openPath: (path: string) => Promise<ProjectOpenResult>
     setDirty: (dirty: boolean) => Promise<void>
+    autosave: (data: Project) => Promise<boolean>
+    getRecovery: () => Promise<{
+      exists: boolean
+      savedAt?: number
+      data?: Project
+    }>
+    clearRecovery: () => Promise<boolean>
   }
   openExternal: (url: string) => Promise<boolean>
   bom: {
@@ -87,6 +108,10 @@ interface WwApi {
       filterName: string
       extensions: string[]
     }) => Promise<{ canceled: boolean; path?: string }>
+    readText: (args: {
+      filterName: string
+      extensions: string[]
+    }) => Promise<{ canceled: boolean; path?: string; content?: string }>
   }
   report: {
     exportPdf: (

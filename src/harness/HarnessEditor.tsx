@@ -32,7 +32,8 @@ import {
   Unlink2,
   Pencil,
   Sparkles,
-  Trash2
+  Trash2,
+  SlidersHorizontal
 } from 'lucide-react'
 import { PinColumnNode, type PinColumnData } from './PinColumnNode'
 import { TwistedPairEdge } from './TwistedPairEdge'
@@ -47,6 +48,7 @@ import { codeSequence, codeColor, formatGauge, DIN_COLORS, COLOR_ABBREV_MAP, ren
 import { imageUrl } from '../shared/useImage'
 import { toast } from '../shared/toast'
 import { ContextMenu, type CtxItem } from '../shared/ContextMenu'
+import { confirmDialog } from '../shared/dialogs'
 
 const nodeTypes: NodeTypes = { pincol: PinColumnNode, splice: SpliceNode }
 const edgeTypes = { twisted: TwistedPairEdge, striped: StripedWireEdge }
@@ -116,6 +118,7 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
   const [hideUnused, setHideUnused] = useState(false)
   const [editingSegment, setEditingSegment] = useState<string | null>(null)
   const [wireMenu, setWireMenu] = useState<{ x: number; y: number } | null>(null)
+  const [bulkOpen, setBulkOpen] = useState(false)
 
   const canvasRef = useRef<HTMLDivElement>(null)
 
@@ -467,6 +470,46 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
     [harness, selectedWireIds, harnessId, setWires]
   )
 
+  const applyPartToSelected = useCallback(
+    (wp: WirePart) => {
+      if (!harness || selectedWireIds.length === 0) return
+      const sel = new Set(selectedWireIds)
+      setWires(
+        harnessId,
+        harness.wires.map((w) =>
+          sel.has(w.id)
+            ? { ...w, wirePartId: wp.id, color: wp.color ?? w.color }
+            : w
+        )
+      )
+    },
+    [harness, selectedWireIds, harnessId, setWires]
+  )
+
+  const applyColorToSelected = useCallback(
+    (color: string | undefined) => {
+      if (!harness || selectedWireIds.length === 0) return
+      const sel = new Set(selectedWireIds)
+      setWires(
+        harnessId,
+        harness.wires.map((w) => (sel.has(w.id) ? { ...w, color } : w))
+      )
+    },
+    [harness, selectedWireIds, harnessId, setWires]
+  )
+
+  const deleteSelectedWires = useCallback(() => {
+    if (!harness || selectedWireIds.length === 0) return
+    const sel = new Set(selectedWireIds)
+    setWires(
+      harnessId,
+      harness.wires.filter((w) => !sel.has(w.id))
+    )
+    setSelectedWireIds([])
+    setBulkOpen(false)
+    setPopupPos(null)
+  }, [harness, selectedWireIds, harnessId, setWires])
+
   const assignWirePart = useCallback(
     (wirePart: WirePart, wireId: string) => {
       if (!harness) return
@@ -659,11 +702,10 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
 
   const onEdgeClick = useCallback(
     (_: React.MouseEvent, ed: Edge) => {
-      setSelectedWireIds((prev) => {
-        if (prev.includes(ed.id)) return prev
-        const next = [...prev, ed.id]
-        return next.slice(-2)
-      })
+      // Toggle membership so any number of wires can be bulk-edited.
+      setSelectedWireIds((prev) =>
+        prev.includes(ed.id) ? prev.filter((id) => id !== ed.id) : [...prev, ed.id]
+      )
       setPopupPos(null)
     },
     []
@@ -672,11 +714,9 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
   const onEdgeContextMenu = useCallback(
     (e: React.MouseEvent, ed: Edge) => {
       e.preventDefault()
-      setSelectedWireIds((prev) => {
-        if (prev.includes(ed.id)) return prev
-        const next = [...prev, ed.id]
-        return next.slice(-2)
-      })
+      setSelectedWireIds((prev) =>
+        prev.includes(ed.id) ? prev : [...prev, ed.id]
+      )
       setWireMenu({ x: e.clientX, y: e.clientY })
     },
     []
@@ -801,6 +841,15 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
         >
           <Link2 size={15} /> Splice
         </button>
+        {selectedWireIds.length > 0 && (
+          <button
+            className="ww-btn text-accent"
+            onClick={() => setBulkOpen(true)}
+            title="Bulk-edit the selected wires"
+          >
+            <SlidersHorizontal size={15} /> Edit {selectedWireIds.length}
+          </button>
+        )}
         <button className="ww-btn" onClick={() => setHideUnused(!hideUnused)} title={hideUnused ? 'Show unused pins' : 'Hide unused pins'}>
           {hideUnused ? <EyeOff size={15} /> : <Eye size={15} />}
         </button>
@@ -899,7 +948,7 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
               e.dataTransfer.dropEffect = 'none'
             }
           }}
-          onDrop={(e) => {
+          onDrop={async (e) => {
             const wpId = e.dataTransfer.getData('application/ww-harness-wire')
             if (!wpId) return
             e.preventDefault()
@@ -912,7 +961,11 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
               assignWirePart(wp, selectedWireIds[0])
             } else {
               // Dropped a single-conductor wire with no selection — prompt.
-              const autoWire = window.confirm(`No wire selected. Auto-wire "${wp.name}" between the first two endpoints?`)
+              const autoWire = await confirmDialog({
+                title: 'Auto-wire?',
+                message: `No wire selected. Auto-wire "${wp.name}" between the first two endpoints?`,
+                confirmLabel: 'Auto-wire'
+              })
               if (autoWire) deployMultiCore(wp)
             }
           }}
@@ -947,6 +1000,17 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
             />
           )}
 
+          {bulkOpen && selectedWires.length > 0 && (
+            <BulkWirePanel
+              selectedWires={selectedWires}
+              wireParts={parts.filter(isWire)}
+              onApplyPart={applyPartToSelected}
+              onApplyColor={applyColorToSelected}
+              onDelete={deleteSelectedWires}
+              onClose={() => setBulkOpen(false)}
+            />
+          )}
+
           {wireMenu && (
             <ContextMenu
               x={wireMenu.x}
@@ -956,6 +1020,87 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
             />
           )}
         </div>
+      </div>
+    </div>
+  )
+}
+
+function BulkWirePanel({
+  selectedWires,
+  wireParts,
+  onApplyPart,
+  onApplyColor,
+  onDelete,
+  onClose
+}: {
+  selectedWires: HarnessWire[]
+  wireParts: WirePart[]
+  onApplyPart: (wp: WirePart) => void
+  onApplyColor: (color: string | undefined) => void
+  onDelete: () => void
+  onClose: () => void
+}) {
+  const SWATCHES = ['BK', 'WH', 'RD', 'GN', 'BU', 'YE', 'OG', 'BN', 'GY', 'VT']
+  return (
+    <div className="absolute right-4 top-4 z-30 w-72 rounded-lg border border-edge bg-panel p-3 shadow-2xl">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-xs font-semibold">Edit {selectedWires.length} wires</span>
+        <button className="text-muted hover:text-ink" onClick={onClose}>
+          <X size={14} />
+        </button>
+      </div>
+      <div className="mb-3 max-h-24 space-y-0.5 overflow-y-auto text-[11px] text-muted">
+        {selectedWires.map((w) => (
+          <div key={w.id} className="truncate">
+            {w.from.end.toUpperCase()}
+            {w.from.position} → {w.to.end.toUpperCase()}
+            {w.to.position}
+            {w.label ? ` · ${w.label}` : ''}
+          </div>
+        ))}
+      </div>
+      <div className="space-y-2">
+        <div>
+          <label className="ww-label">Assign wire part to all</label>
+          <select
+            className="ww-input"
+            defaultValue=""
+            onChange={(e) => {
+              const wp = wireParts.find((p) => p.id === e.target.value)
+              if (wp) onApplyPart(wp)
+            }}
+          >
+            <option value="">— choose —</option>
+            {wireParts.map((wp) => (
+              <option key={wp.id} value={wp.id}>
+                {wp.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="ww-label">Set colour for all</label>
+          <div className="flex flex-wrap items-center gap-1">
+            {SWATCHES.map((abbr) => {
+              const hex = COLOR_ABBREV_MAP[abbr]
+              return (
+                <button
+                  key={abbr}
+                  className="h-6 w-6 rounded border border-edge hover:border-accent"
+                  style={{ background: hex }}
+                  title={abbr}
+                  onClick={() => onApplyColor(hex)}
+                />
+              )
+            })}
+            <button className="ww-btn text-[11px]" onClick={() => onApplyColor(undefined)}>
+              Clear
+            </button>
+          </div>
+        </div>
+        <button className="ww-btn w-full text-[#e5484d]" onClick={onDelete}>
+          <Trash2 size={14} /> Delete {selectedWires.length} wires
+        </button>
       </div>
     </div>
   )

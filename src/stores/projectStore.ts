@@ -15,6 +15,7 @@ import {
   sanitizeTwists,
   suggestHarnessNames
 } from '../model/derivation'
+import { createRevision, restoreRevision as restoreRevisionFn } from '../model/revisions'
 
 
 interface ProjectState {
@@ -33,6 +34,8 @@ interface ProjectState {
 
   // harnesses
   addHarness: (endpoints: HarnessEndpoint[], name?: string) => string | undefined
+  /** Insert a fully-formed harness (e.g. from a subassembly), assigning a new id. */
+  importHarness: (harness: Harness) => string
   /** Add an endpoint to a harness. Returns true if it was new, false if already present. */
   addEndpointToHarness: (harnessId: string, endpoint: HarnessEndpoint) => boolean
   /** Find the harness id that contains this endpoint, if any. */
@@ -51,6 +54,10 @@ interface ProjectState {
   addSplice: (harnessId: string, wireIds: string[]) => void
   removeSplice: (harnessId: string, spliceId: string) => void
   assignSpliceWire: (harnessId: string, spliceId: string, wirePartId: string) => void
+
+  // revisions
+  addRevision: (label: string, description?: string) => void
+  restoreRevision: (revisionId: string) => void
 
   // whole-project
   setProjectMeta: (
@@ -253,6 +260,23 @@ export const useProjectStore = create<ProjectState>()(
         return id
       },
 
+      importHarness: (harness) => {
+        flushCoalesce()
+        const id = nanoid()
+        const copy: Harness = {
+          ...harness,
+          id,
+          wires: sanitizeTwists(harness.wires),
+          splices: (harness.splices ?? []).map((s) => ({ ...s, id: nanoid() })),
+          accessories: (harness.accessories ?? []).map((a) => ({ ...a, id: nanoid() }))
+        }
+        set((s) => ({
+          project: { ...s.project, harnesses: [...s.project.harnesses, copy] },
+          dirty: true
+        }))
+        return id
+      },
+
       addEndpointToHarness: (harnessId, endpoint) => {
         flushCoalesce()
         return addEndpointToHarnessFn(harnessId, endpoint)
@@ -325,16 +349,15 @@ export const useProjectStore = create<ProjectState>()(
         flushCoalesce()
         const src = get().project.harnesses.find((h) => h.id === id)
         if (!src) return
+        // Two passes: assign every new wire id first, then remap twistedWith,
+        // otherwise a wire can reference a mate whose new id isn't known yet.
         const wireIds = new Map<string, string>()
-        const wires = src.wires.map((w) => {
-          const newId = nanoid()
-          wireIds.set(w.id, newId)
-          return {
-            ...w,
-            id: newId,
-            twistedWith: w.twistedWith ? wireIds.get(w.twistedWith) ?? undefined : undefined
-          }
-        })
+        for (const w of src.wires) wireIds.set(w.id, nanoid())
+        const wires = src.wires.map((w) => ({
+          ...w,
+          id: wireIds.get(w.id)!,
+          twistedWith: w.twistedWith ? wireIds.get(w.twistedWith) ?? undefined : undefined
+        }))
         const copy: Harness = {
           ...src,
           id: nanoid(),
@@ -433,6 +456,24 @@ export const useProjectStore = create<ProjectState>()(
           },
           dirty: true
         }))
+      },
+
+      addRevision: (label, description) => {
+        flushCoalesce()
+        const rev = createRevision(get().project, label, description)
+        set((s) => ({
+          project: {
+            ...s.project,
+            revisions: [...(s.project.revisions ?? []), rev]
+          },
+          dirty: true
+        }))
+      },
+
+      restoreRevision: (revisionId) => {
+        flushCoalesce()
+        const restored = restoreRevisionFn(get().project, revisionId)
+        set({ project: restored, dirty: true })
       },
 
       setProjectMeta: (patch) => {

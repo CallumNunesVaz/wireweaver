@@ -11,7 +11,9 @@ const api = {
     getPath: () => ipcRenderer.invoke('library:getPath'),
     setPath: (path: string) => ipcRenderer.invoke('library:setPath', path),
     relocatePath: (path: string) => ipcRenderer.invoke('library:relocatePath', path),
-    choosePath: () => ipcRenderer.invoke('library:choosePath')
+    choosePath: () => ipcRenderer.invoke('library:choosePath'),
+    listPacks: () => ipcRenderer.invoke('library:listPacks'),
+    readPack: (id: string) => ipcRenderer.invoke('library:readPack', id)
   },
   image: {
     import: (dataUrl: string, thumbDataUrl?: string) =>
@@ -22,7 +24,10 @@ const api = {
       ipcRenderer.invoke('project:save', { path, data }),
     open: () => ipcRenderer.invoke('project:open'),
     openPath: (path: string) => ipcRenderer.invoke('project:openPath', path),
-    setDirty: (dirty: boolean) => ipcRenderer.invoke('project:setDirty', dirty)
+    setDirty: (dirty: boolean) => ipcRenderer.invoke('project:setDirty', dirty),
+    autosave: (data: unknown) => ipcRenderer.invoke('project:autosave', data),
+    getRecovery: () => ipcRenderer.invoke('project:getRecovery'),
+    clearRecovery: () => ipcRenderer.invoke('project:clearRecovery')
   },
   openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   bom: {
@@ -35,7 +40,9 @@ const api = {
       defaultName: string
       filterName: string
       extensions: string[]
-    }) => ipcRenderer.invoke('file:exportText', args)
+    }) => ipcRenderer.invoke('file:exportText', args),
+    readText: (args: { filterName: string; extensions: string[] }) =>
+      ipcRenderer.invoke('file:readText', args)
   },
   report: {
     exportPdf: (html: string, defaultName: string) =>

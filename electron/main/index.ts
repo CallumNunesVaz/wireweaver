@@ -1,5 +1,5 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, protocol } from 'electron'
-import { join, extname, relative, isAbsolute, dirname } from 'node:path'
+import { join, extname, relative, isAbsolute, basename } from 'node:path'
 import { promises as fs } from 'node:fs'
 import { createHash } from 'node:crypto'
 
@@ -38,6 +38,13 @@ function libraryDir(): string {
   return _cachedLibDir ?? DEFAULT_LIBRARY_DIR
 }
 
+/** Directory holding bundled starter packs (repo data/ in dev, resources in prod). */
+function packsDir(): string {
+  return isDev
+    ? join(app.getAppPath(), 'data')
+    : join(process.resourcesPath, 'data')
+}
+
 async function initSettings(): Promise<void> {
   _settings = await readJson<AppSettings>(settingsFile(), {})
   _cachedLibDir = _settings.libraryPath ?? DEFAULT_LIBRARY_DIR
@@ -61,6 +68,9 @@ function templatesFile(): string {
 }
 function recentFile(): string {
   return join(libraryDir(), 'recent-projects.json')
+}
+function recoveryFile(): string {
+  return join(app.getPath('userData'), 'recovery.wwv')
 }
 
 async function ensureDirs(): Promise<void> {
@@ -344,6 +354,27 @@ async function registerIpc(): Promise<void> {
     projectDirty = dirty
   })
 
+  // Crash recovery: a rolling autosave outside the library so unsaved work
+  // survives a hard quit. Cleared on explicit save / new / open.
+  ipcMain.handle('project:autosave', async (_e, data: unknown) => {
+    await writeJsonAtomic(recoveryFile(), { savedAt: Date.now(), data })
+    return true
+  })
+
+  ipcMain.handle('project:getRecovery', async () => {
+    const rec = await readJson<{ savedAt: number; data: unknown } | null>(
+      recoveryFile(),
+      null
+    )
+    if (!rec || !rec.data) return { exists: false }
+    return { exists: true, savedAt: rec.savedAt, data: rec.data }
+  })
+
+  ipcMain.handle('project:clearRecovery', async () => {
+    await fs.unlink(recoveryFile()).catch(() => {})
+    return true
+  })
+
   ipcMain.handle('shell:openExternal', async (_e, url: string) => {
     if (typeof url === 'string' && url.startsWith('http')) await shell.openExternal(url)
     return true
@@ -379,6 +410,21 @@ async function registerIpc(): Promise<void> {
       await fs.writeFile(tmp, args.content, 'utf8')
       await fs.rename(tmp, res.filePath)
       return { canceled: false, path: res.filePath }
+    }
+  )
+
+  // Read a text file chosen by the user (WireViz import, etc.).
+  ipcMain.handle(
+    'file:readText',
+    async (_e, args: { filterName: string; extensions: string[] }) => {
+      const res = await dialog.showOpenDialog(mainWindow!, {
+        title: 'Import',
+        properties: ['openFile'],
+        filters: [{ name: args.filterName, extensions: args.extensions }]
+      })
+      if (res.canceled || res.filePaths.length === 0) return { canceled: true }
+      const content = await fs.readFile(res.filePaths[0], 'utf8')
+      return { canceled: false, path: res.filePaths[0], content }
     }
   )
 
@@ -465,6 +511,39 @@ async function registerIpc(): Promise<void> {
     const trimmed = filtered.slice(0, 10)
     await writeJsonAtomic(recentFile(), trimmed)
     return trimmed
+  })
+
+  // Bundled starter content packs (data/*.wwlib) shipped beside the app.
+  ipcMain.handle('library:listPacks', async () => {
+    try {
+      const dir = packsDir()
+      const entries = await fs.readdir(dir)
+      const packs: { id: string; name: string; parts: number; templates: number }[] = []
+      for (const e of entries) {
+        if (!e.toLowerCase().endsWith('.wwlib')) continue
+        const data = await readJson<{ parts?: unknown[]; templates?: unknown[] }>(
+          join(dir, e),
+          {}
+        )
+        packs.push({
+          id: e,
+          name: e.replace(/\.wwlib$/i, '').replace(/[-_]+/g, ' '),
+          parts: Array.isArray(data.parts) ? data.parts.length : 0,
+          templates: Array.isArray(data.templates) ? data.templates.length : 0
+        })
+      }
+      packs.sort((a, b) => a.name.localeCompare(b.name))
+      return packs
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle('library:readPack', async (_e, id: string) => {
+    const safe = basename(String(id))
+    if (!safe.toLowerCase().endsWith('.wwlib')) return { id: safe, data: null }
+    const data = await readJson(join(packsDir(), safe), null)
+    return { id: safe, data }
   })
 
   ipcMain.handle('library:getPath', async () => {

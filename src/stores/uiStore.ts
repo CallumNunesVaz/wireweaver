@@ -34,6 +34,10 @@ interface UiState {
   libraryManagerOpen: boolean
   reportsOpen: boolean
   drcOpen: boolean
+  /** Index of the issue highlighted in the DRC panel (for prev/next nav). */
+  drcIndex: number
+  revisionsOpen: boolean
+  commandPaletteOpen: boolean
   cheatsheetOpen: boolean
   calculatorOpen: boolean
   docsOpen: boolean
@@ -59,6 +63,9 @@ interface UiState {
   toggleLibraryManager: () => void
   toggleReports: () => void
   toggleDrc: () => void
+  setDrcIndex: (i: number) => void
+  toggleRevisions: () => void
+  toggleCommandPalette: () => void
   toggleCheatsheet: () => void
   toggleCalculator: () => void
   toggleDocs: () => void
@@ -81,6 +88,9 @@ export const useUiStore = create<UiState>((set) => ({
   libraryManagerOpen: false,
   reportsOpen: false,
   drcOpen: false,
+  drcIndex: 0,
+  revisionsOpen: false,
+  commandPaletteOpen: false,
   cheatsheetOpen: false,
   calculatorOpen: false,
   docsOpen: false,
@@ -114,6 +124,10 @@ export const useUiStore = create<UiState>((set) => ({
     set((st) => ({ libraryManagerOpen: !st.libraryManagerOpen })),
   toggleReports: () => set((st) => ({ reportsOpen: !st.reportsOpen })),
   toggleDrc: () => set((st) => ({ drcOpen: !st.drcOpen })),
+  setDrcIndex: (drcIndex) => set({ drcIndex }),
+  toggleRevisions: () => set((st) => ({ revisionsOpen: !st.revisionsOpen })),
+  toggleCommandPalette: () =>
+    set((st) => ({ commandPaletteOpen: !st.commandPaletteOpen })),
   toggleCheatsheet: () => set((st) => ({ cheatsheetOpen: !st.cheatsheetOpen })),
   toggleCalculator: () => set((st) => ({ calculatorOpen: !st.calculatorOpen })),
 

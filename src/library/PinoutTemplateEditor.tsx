@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { nanoid } from 'nanoid'
 import { Modal } from '../shared/Modal'
+import { toast } from '../shared/toast'
 import { useLibraryStore } from '../stores/libraryStore'
 import { useUiStore } from '../stores/uiStore'
 import { SIGNAL_CLASSES, signalColor } from '../shared/signal'
@@ -59,11 +60,11 @@ export function PinoutTemplateEditor() {
 
   const save = () => {
     if (!draft.name.trim()) {
-      window.alert('Please name the template.')
+      toast('Please name the template.', 'error')
       return
     }
     if (!draft.connectorPartId) {
-      window.alert('Please choose a connector part.')
+      toast('Please choose a connector part.', 'error')
       return
     }
     upsertTemplate({ ...draft, pins })

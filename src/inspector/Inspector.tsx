@@ -1,11 +1,14 @@
 import { useMemo, useState } from 'react'
-import { Pencil, Trash2, Copy, Cable, Cpu, AlertTriangle, Plus, X } from 'lucide-react'
+import { Pencil, Trash2, Copy, Cable, Cpu, AlertTriangle, Plus, X, Boxes } from 'lucide-react'
 import { useLibraryStore, selectLibraryLike } from '../stores/libraryStore'
 import { useProjectStore } from '../stores/projectStore'
 import { useUiStore } from '../stores/uiStore'
 import { resolveEndpoint, validateHarness } from '../model/derivation'
 import { formatMoney } from '../model/currency'
 import { isConnector, isWire, type AccessoryCategory } from '../model/types'
+import { createSubassembly } from '../model/subassembly'
+import { promptDialog } from '../shared/dialogs'
+import { toast } from '../shared/toast'
 
 const ACCESSORY_CATEGORIES: { value: AccessoryCategory; label: string }[] = [
   { value: 'contact', label: 'Contact' },
@@ -127,6 +130,7 @@ function HarnessInspector({ id }: { id: string }) {
   const removeAccessory = useProjectStore((s) => s.removeHarnessAccessory)
   const parts = useLibraryStore((s) => s.parts)
   const templates = useLibraryStore((s) => s.templates)
+  const upsertPart = useLibraryStore((s) => s.upsertPart)
   const openHarnessEditor = useUiStore((s) => s.openHarnessEditor)
   const select = useUiStore((s) => s.select)
 
@@ -173,6 +177,28 @@ function HarnessInspector({ id }: { id: string }) {
     setAccPartId('')
     setAccQty(1)
     setAccSearch('')
+  }
+
+  const saveAsSubassembly = async () => {
+    const name = await promptDialog({
+      title: 'Save as subassembly',
+      label: 'Subassembly name',
+      defaultValue: harness.name,
+      confirmLabel: 'Save to library'
+    })
+    if (!name || !name.trim()) return
+    const sub = createSubassembly(harness, name.trim(), {
+      name: name.trim(),
+      type: 'Custom',
+      internalPartNumber: '',
+      manufacturer: '',
+      manufacturerPartNumber: '',
+      supplier: '',
+      supplierPartNumber: '',
+      notes: harness.description
+    })
+    upsertPart(sub)
+    toast(`Saved subassembly "${sub.name}" to the library.`, 'success')
   }
 
   const lookupPart = (partId: string) => parts.find((p) => p.id === partId)
@@ -285,6 +311,13 @@ function HarnessInspector({ id }: { id: string }) {
       <div className="flex gap-1 border-t border-edge p-2">
         <button className="ww-btn-primary flex-1" onClick={() => openHarnessEditor(id)}>
           <Pencil size={13} /> Wire harness
+        </button>
+        <button
+          className="ww-btn"
+          onClick={saveAsSubassembly}
+          title="Save as reusable subassembly"
+        >
+          <Boxes size={14} />
         </button>
         <button
           className="ww-btn"

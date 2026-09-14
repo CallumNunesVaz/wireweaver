@@ -6,6 +6,8 @@ import type {
   PartBase,
   SubassemblyPart
 } from './types'
+import { endLabel, isDevice } from './types'
+import type { LibraryLike } from './derivation'
 
 export function createSubassembly(
   harness: Harness,
@@ -85,4 +87,74 @@ export function instantiateSubassembly(
   }
 
   return { instances, newHarness }
+}
+
+export interface SubassemblyInstantiation {
+  harness: Harness | null
+  matched: number
+  missing: number
+}
+
+/**
+ * Re-create a subassembly's saved harness in the current project. Endpoints are
+ * matched to existing device instances by port id (preferring an unused
+ * instance), so a reusable harness can be dropped into any project that has the
+ * same device parts placed. Unmatched endpoints and their wires are dropped.
+ */
+export function instantiateSubassemblyHarness(
+  lib: LibraryLike,
+  instances: DeviceInstance[],
+  sub: SubassemblyPart
+): SubassemblyInstantiation {
+  const src = sub.harness
+  const endpoints: HarnessEndpoint[] = []
+  const remap = new Map<string, string>()
+  const used = new Set<string>()
+  let missing = 0
+
+  src.endpoints.forEach((ep, i) => {
+    const oldLabel = endLabel(i)
+    const match = instances.find((inst) => {
+      const p = lib.parts[inst.partId]
+      if (!p || !isDevice(p) || !p.ports.some((port) => port.id === ep.portId)) return false
+      return !used.has(`${inst.id}:${ep.portId}`)
+    })
+    if (match) {
+      used.add(`${match.id}:${ep.portId}`)
+      remap.set(oldLabel, endLabel(endpoints.length))
+      endpoints.push({ deviceInstanceId: match.id, portId: ep.portId })
+    } else {
+      missing++
+    }
+  })
+
+  if (endpoints.length < 2) return { harness: null, matched: 0, missing }
+
+  const wires = src.wires
+    .filter((w) => remap.has(w.from.end) && remap.has(w.to.end))
+    .map((w) => ({
+      ...w,
+      id: nanoid(),
+      from: { ...w.from, end: remap.get(w.from.end)! },
+      to: { ...w.to, end: remap.get(w.to.end)! },
+      twistedWith: undefined
+    }))
+  const segments = src.segments
+    .filter((s) => remap.has(s.fromEnd) && remap.has(s.toEnd))
+    .map((s) => ({
+      ...s,
+      fromEnd: remap.get(s.fromEnd)!,
+      toEnd: remap.get(s.toEnd)!
+    }))
+
+  const harness: Harness = {
+    id: nanoid(),
+    name: sub.name,
+    endpoints,
+    wires,
+    segments,
+    accessories: (src.accessories ?? []).map((a) => ({ ...a, id: nanoid() })),
+    splices: []
+  }
+  return { harness, matched: endpoints.length, missing }
 }

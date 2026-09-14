@@ -59,5 +59,9 @@ extraResources:
     to: build/
     filter:
       - "**/*"
+  - from: data/
+    to: data/
+    filter:
+      - "*.wwlib"
 
 publish: null

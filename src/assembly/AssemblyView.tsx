@@ -22,6 +22,7 @@ import { HarnessEdge } from './HarnessEdge'
 import { autoLayout } from './autoLayout'
 import { ContextMenu, type CtxItem } from '../shared/ContextMenu'
 import { toast } from '../shared/toast'
+import { promptDialog } from '../shared/dialogs'
 import { useLibraryStore, selectLibraryLike } from '../stores/libraryStore'
 import { useProjectStore, coalesceUndo } from '../stores/projectStore'
 import { useUiStore } from '../stores/uiStore'
@@ -228,7 +229,7 @@ export function AssemblyView() {
   )
 
   const onDrop = useCallback(
-    (e: React.DragEvent) => {
+    async (e: React.DragEvent) => {
       e.preventDefault()
       const position = screenToFlowPosition({ x: e.clientX, y: e.clientY })
 
@@ -248,7 +249,12 @@ export function AssemblyView() {
           if (devPart && isDevice(devPart)) {
             const tpl = lib.templates.find((t) => t.id === templateId)
             const defaultName = tpl?.name ?? `Port ${devPart.ports.length + 1}`
-            const portName = window.prompt('Port name:', defaultName)
+            const portName = await promptDialog({
+              title: 'Add port',
+              label: 'Port name',
+              defaultValue: defaultName,
+              confirmLabel: 'Add port'
+            })
             if (!portName || !portName.trim()) return
             const newPort = {
               id: nanoid(),
@@ -471,9 +477,14 @@ export function AssemblyView() {
         {
           label: 'Rename',
           icon: <Pencil size={14} />,
-          onClick: () => {
+          onClick: async () => {
             if (!inst) return
-            const label = window.prompt('Instance label:', inst.label)
+            const label = await promptDialog({
+              title: 'Rename device',
+              label: 'Instance label',
+              defaultValue: inst.label,
+              confirmLabel: 'Rename'
+            })
             if (label && label.trim()) {
               useProjectStore.getState().setInstanceLabel(menu.id, label.trim())
             }

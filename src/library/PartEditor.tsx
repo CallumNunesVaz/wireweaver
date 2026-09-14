@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { nanoid } from 'nanoid'
 import { ImagePlus, Trash2, Plus, ExternalLink } from 'lucide-react'
 import { Modal } from '../shared/Modal'
+import { toast } from '../shared/toast'
 import { useLibraryStore } from '../stores/libraryStore'
 import { useUiStore } from '../stores/uiStore'
 import { CURRENCIES } from '../model/currency'
@@ -69,7 +70,7 @@ export function PartEditor() {
 
   const save = () => {
     if (!draft.name.trim()) {
-      window.alert('Please give the part a name.')
+      toast('Please give the part a name.', 'error')
       return
     }
     upsertPart(draft)

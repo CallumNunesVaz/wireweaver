@@ -15,12 +15,16 @@ import {
 } from '../model/reports'
 import { buildHtmlReport } from '../model/report-html'
 import { wirevizYaml } from '../model/wireviz'
+import { buildBom, bomTotals } from '../model/bom'
+import { convertBomTotals } from '../model/fx'
+import { formatMoney } from '../model/currency'
+import { FormboardView } from './FormboardView'
 
 function errMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-type Tab = 'wiring' | 'cutlist' | 'netlist'
+type Tab = 'wiring' | 'cutlist' | 'netlist' | 'formboard'
 
 /** Capture the assembly canvas as a PNG data URL; undefined when unavailable. */
 async function captureAssemblyPng(): Promise<string | undefined> {
@@ -53,9 +57,33 @@ export function ReportsModal() {
     }
   }, [project.harnesses, wirevizHarnessId])
 
+  const formboardHarnessId = wirevizHarnessId
+  const formboardHarness = project.harnesses.find((h) => h.id === formboardHarnessId)
+
   const wiringRows = useMemo(() => wiringTableAll(lib, project), [lib, project])
   const cutRows = useMemo(() => cutlist(lib, project, slackMm), [lib, project, slackMm])
   const nets = useMemo(() => netlist(lib, project), [lib, project])
+
+  // BOM totals + optional FX conversion.
+  const bomRows = useMemo(() => buildBom(project, lib), [lib, project])
+  const totals = useMemo(() => bomTotals(bomRows), [bomRows])
+  const [targetCurrency, setTargetCurrency] = useState('USD')
+  const [converted, setConverted] = useState<{ amount: number; rate: number } | null>(null)
+  const [converting, setConverting] = useState(false)
+
+  const doConvert = async () => {
+    setConverting(true)
+    try {
+      const res = await convertBomTotals(bomRows, targetCurrency)
+      if (!res) {
+        toast('Could not fetch exchange rates (offline?).', 'error')
+        return
+      }
+      setConverted({ amount: res.convertedCost, rate: res.rate })
+    } finally {
+      setConverting(false)
+    }
+  }
 
   const fileBase = project.name || 'wireweaver'
 
@@ -197,7 +225,7 @@ export function ReportsModal() {
 
       {/* Preview tabs */}
       <div className="mb-2 flex items-center gap-1">
-        {(['wiring', 'cutlist', 'netlist'] as Tab[]).map((t) => (
+        {(['wiring', 'cutlist', 'netlist', 'formboard'] as Tab[]).map((t) => (
           <button
             key={t}
             className={`rounded px-3 py-1 text-xs capitalize ${
@@ -222,6 +250,15 @@ export function ReportsModal() {
         )}
       </div>
 
+      {tab === 'formboard' ? (
+        formboardHarness ? (
+          <FormboardView lib={lib} project={project} harness={formboardHarness} />
+        ) : (
+          <div className="rounded border border-edge px-3 py-6 text-center text-xs text-muted">
+            No harnesses to lay out.
+          </div>
+        )
+      ) : (
       <div className="max-h-72 overflow-auto rounded border border-edge">
         {tab === 'wiring' && (
           <table className="w-full border-collapse text-xs">
@@ -304,6 +341,44 @@ export function ReportsModal() {
             </tbody>
           </table>
         )}
+      </div>
+      )}
+
+      {/* BOM totals with optional FX conversion */}
+      <div className="mt-4 flex flex-wrap items-center gap-3 rounded border border-edge bg-panelalt px-3 py-2 text-xs">
+        <span className="font-medium">BOM totals</span>
+        <span className="text-muted">Weight {totals.weightGrams.toFixed(1)} g</span>
+        {[...totals.costByCurrency].map(([cur, amount]) => (
+          <span key={cur} className="text-muted">
+            {formatMoney({ amount, currency: cur })}
+          </span>
+        ))}
+        {totals.costByCurrency.size === 0 && (
+          <span className="text-muted">No priced parts.</span>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          <select
+            className="ww-input w-20"
+            value={targetCurrency}
+            onChange={(e) => {
+              setTargetCurrency(e.target.value)
+              setConverted(null)
+            }}
+          >
+            {['USD', 'EUR', 'GBP', 'AUD', 'CAD', 'JPY', 'CNY', 'CHF'].map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+          <button className="ww-btn" onClick={doConvert} disabled={converting}>
+            {converting ? 'Converting…' : 'Convert'}
+          </button>
+          {converted && (
+            <span className="text-accent font-medium">
+              ≈ {formatMoney({ amount: converted.amount, currency: targetCurrency })}
+              <span className="ml-1 text-[10px] text-muted">@ {converted.rate.toFixed(4)}</span>
+            </span>
+          )}
+        </div>
       </div>
     </Modal>
   )

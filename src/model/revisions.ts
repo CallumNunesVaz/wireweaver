@@ -16,7 +16,9 @@ export function createRevision(
   }
 }
 
-export function diffRevisions(a: Project, b: Project): string[] {
+type ProjectLike = Omit<Project, 'revisions'>
+
+export function diffRevisions(a: ProjectLike, b: ProjectLike): string[] {
   const lines: string[] = []
 
   const aDeviceIds = new Set(a.deviceInstances.map((d) => d.id))

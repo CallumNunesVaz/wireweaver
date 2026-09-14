@@ -170,7 +170,8 @@ export async function exportBomCsv(
 ): Promise<{ canceled: boolean; path?: string; error?: string }> {
   try {
     const csv = toCsv(buildBom(project, lib))
-    return window.ww.bom.export(csv, `${project.name || 'wireweaver'}-bom.csv`)
+    // Await so a rejected bridge call is caught rather than escaping the try.
+    return await window.ww.bom.export(csv, `${project.name || 'wireweaver'}-bom.csv`)
   } catch (e) {
     return { canceled: false, error: e instanceof Error ? e.message : 'Unknown error' }
   }
