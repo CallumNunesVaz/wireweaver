@@ -57,13 +57,13 @@ export function ReconciliationDialog() {
 
   return (
     <Modal
-      title={`New Parts & Templates Found (${total})`}
+      title={`Add this project's parts to your library? (${total})`}
       onClose={dismiss}
       wide
       footer={
         <>
           <button className="ww-btn" onClick={dismiss}>
-            Skip All
+            Not now
           </button>
           <div className="flex-1" />
           <button className="ww-btn" onClick={selectAll}>
@@ -74,14 +74,15 @@ export function ReconciliationDialog() {
             onClick={handleImport}
             disabled={selected === 0}
           >
-            Import {selected} item{selected === 1 ? '' : 's'}
+            Add {selected} item{selected === 1 ? '' : 's'} to library
           </button>
         </>
       }
     >
       <p className="mb-3 text-xs text-muted">
-        This project references parts or templates not found in your library.
-        Select which ones to import.
+        This project carries parts and templates that aren't in your library. It already displays
+        and reports correctly using its own copies; adding them to your library lets you reuse and
+        edit them in other projects.
       </p>
 
       {items.parts.length > 0 && (

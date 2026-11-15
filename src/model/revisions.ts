@@ -6,7 +6,7 @@ export function createRevision(
   label: string,
   description?: string
 ): ProjectRevision {
-  const { revisions, ...rest } = project
+  const { revisions: _revisions, ...rest } = project
   return {
     id: nanoid(),
     timestamp: Date.now(),

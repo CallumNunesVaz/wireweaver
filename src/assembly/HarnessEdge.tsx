@@ -19,10 +19,10 @@ export type HarnessEdgeData = {
 }
 
 const STATUS_COLOR: Record<HarnessStatus, string> = {
-  unwired: '#7a808c',
-  partial: '#c48a2f',
-  wired: '#3fb27f',
-  invalid: '#e5484d'
+  unwired: 'var(--color-neutral)',
+  partial: 'var(--color-warn)',
+  wired: 'var(--color-success)',
+  invalid: 'var(--color-danger)'
 }
 
 function HarnessEdgeImpl({
@@ -63,10 +63,10 @@ function HarnessEdgeImpl({
       <EdgeLabelRenderer>
         {d?.showLabel !== false && (
           <div
-            className="nodrag nopan absolute flex cursor-pointer items-center gap-1 rounded border bg-panel px-1.5 py-0.5 text-[10px]"
+            className="nodrag nopan absolute flex cursor-pointer items-center gap-1 rounded border bg-panel px-1.5 py-0.5 text-[11px]"
             style={{
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
-              borderColor: selected ? '#5b9bff' : '#2f343f',
+              borderColor: selected ? 'var(--color-accent)' : 'var(--color-edge)',
               pointerEvents: 'all'
             }}
             onDoubleClick={() => {
@@ -82,7 +82,7 @@ function HarnessEdgeImpl({
 
         {isHovered && d?.showLabel !== false && (
           <button
-            className="nodrag nopan absolute flex items-center gap-1 rounded border border-accent bg-accent px-1.5 py-0.5 text-[10px] font-medium text-white shadow-lg hover:brightness-110"
+            className="nodrag nopan absolute flex items-center gap-1 rounded border border-accent bg-accent px-1.5 py-0.5 text-[11px] font-medium text-accent-ink shadow-lg hover:brightness-110"
             style={{
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY + 22}px)`,
               pointerEvents: 'all'

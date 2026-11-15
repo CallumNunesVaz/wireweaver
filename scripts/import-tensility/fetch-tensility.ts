@@ -156,7 +156,7 @@ function formatVoltageTag(tag: string): string {
 
 function formatTempTag(tag: string): string {
   // Strip -degc or degc suffix and any trailing dash
-  let cleaned = tag.replace(/-?degc$/i, '').replace(/-$/, '')
+  const cleaned = tag.replace(/-?degc$/i, '').replace(/-$/, '')
   // Match any range: -40-80, -40~80
   const rangeMatch = cleaned.match(/^(-?\d+)[-~](\d+)$/)
   if (rangeMatch) return `${rangeMatch[1]} ~ ${rangeMatch[2]} °C`

@@ -35,11 +35,11 @@ export const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
  */
 export async function launch(options = {}) {
   fs.mkdirSync(SHOT_DIR, { recursive: true })
-  const libDir = path.join(CONFIG_DIR, 'WireWeaver', 'library')
-  fs.mkdirSync(libDir, { recursive: true })
+  const userData = path.join(CONFIG_DIR, 'WireWeaver')
+  fs.mkdirSync(path.join(userData, 'library'), { recursive: true })
   if (options.recent) {
     fs.writeFileSync(
-      path.join(libDir, 'recent-projects.json'),
+      path.join(userData, 'recent-projects.json'),
       JSON.stringify(options.recent.map((r) => ({ ...r, openedAt: Date.now() })))
     )
   }
@@ -67,14 +67,26 @@ export async function closeApp(app, page) {
   await app.close().catch(() => {})
 }
 
-/** Interaction helpers bound to a page. All log what they did. */
-export function helpers(page) {
+/**
+ * Interaction helpers bound to a page. All log what they did. Pass `app` so
+ * screenshots use Electron's own capturePage(): on Electron 45 Playwright's
+ * page.screenshot() succeeds once and then times out on every later call.
+ */
+export function helpers(page, app) {
   let shot = 0
 
   const ss = async (name) => {
     shot += 1
     const f = path.join(SHOT_DIR, `${String(shot).padStart(2, '0')}-${name || 'shot'}.png`)
-    await page.screenshot({ path: f })
+    if (app) {
+      const b64 = await app.evaluate(async ({ BrowserWindow }) => {
+        const win = BrowserWindow.getAllWindows().find((w) => w.isVisible()) ?? BrowserWindow.getAllWindows()[0]
+        return (await win.webContents.capturePage()).toPNG().toString('base64')
+      })
+      fs.writeFileSync(f, Buffer.from(b64, 'base64'))
+    } else {
+      await page.screenshot({ path: f })
+    }
     console.log('SHOT', f)
     return f
   }
@@ -184,7 +196,7 @@ if (isMain) {
     async launch() {
       if (app) return console.log('already launched')
       ;({ app, page } = await launch())
-      h = helpers(page)
+      h = helpers(page, app)
       console.log('launched')
     },
     async ss(a) { await h?.ss(a) },

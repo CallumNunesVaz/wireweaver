@@ -1,64 +1,67 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import type { IpcArgs, IpcChannel, IpcEvents, IpcResult, WwApi } from '../../src/ipc/contract'
 
-const api = {
+const invoke = <C extends IpcChannel>(channel: C, ...args: IpcArgs<C>): Promise<IpcResult<C>> =>
+  ipcRenderer.invoke(channel, ...args)
+
+const EVENTS: ReadonlySet<string> = new Set<keyof IpcEvents>([
+  'app:openFile',
+  'app:saveAndClose',
+  'menu:command'
+])
+
+const api: WwApi = {
   library: {
-    load: () => ipcRenderer.invoke('library:load'),
-    saveParts: (parts: unknown) => ipcRenderer.invoke('library:saveParts', parts),
-    saveTemplates: (templates: unknown) =>
-      ipcRenderer.invoke('library:saveTemplates', templates),
-    export: (data: unknown) => ipcRenderer.invoke('library:export', data),
-    import: () => ipcRenderer.invoke('library:import'),
-    getPath: () => ipcRenderer.invoke('library:getPath'),
-    setPath: (path: string) => ipcRenderer.invoke('library:setPath', path),
-    relocatePath: (path: string) => ipcRenderer.invoke('library:relocatePath', path),
-    choosePath: () => ipcRenderer.invoke('library:choosePath'),
-    listPacks: () => ipcRenderer.invoke('library:listPacks'),
-    readPack: (id: string) => ipcRenderer.invoke('library:readPack', id)
+    load: () => invoke('library:load'),
+    saveParts: (parts) => invoke('library:saveParts', parts),
+    saveTemplates: (templates) => invoke('library:saveTemplates', templates),
+    export: (data) => invoke('library:export', data),
+    import: () => invoke('library:import'),
+    getPath: () => invoke('library:getPath'),
+    setPath: (path) => invoke('library:setPath', path),
+    relocatePath: (path) => invoke('library:relocatePath', path),
+    choosePath: () => invoke('library:choosePath'),
+    listPacks: () => invoke('library:listPacks'),
+    readPack: (id) => invoke('library:readPack', id)
   },
   image: {
-    import: (dataUrl: string, thumbDataUrl?: string) =>
-      ipcRenderer.invoke('image:import', { dataUrl, thumbDataUrl })
+    import: (dataUrl, thumbDataUrl) => invoke('image:import', { dataUrl, thumbDataUrl })
   },
   project: {
-    save: (path: string | undefined, data: unknown) =>
-      ipcRenderer.invoke('project:save', { path, data }),
-    open: () => ipcRenderer.invoke('project:open'),
-    openPath: (path: string) => ipcRenderer.invoke('project:openPath', path),
-    setDirty: (dirty: boolean) => ipcRenderer.invoke('project:setDirty', dirty),
-    autosave: (data: unknown, path?: string) =>
-      ipcRenderer.invoke('project:autosave', { data, path }),
-    getRecovery: () => ipcRenderer.invoke('project:getRecovery'),
-    clearRecovery: () => ipcRenderer.invoke('project:clearRecovery')
+    save: (path, data) => invoke('project:save', { path, data }),
+    open: () => invoke('project:open'),
+    openPath: (path) => invoke('project:openPath', path),
+    setDirty: (dirty) => invoke('project:setDirty', dirty),
+    autosave: (data, path) => invoke('project:autosave', { data, path }),
+    getRecovery: () => invoke('project:getRecovery'),
+    clearRecovery: () => invoke('project:clearRecovery')
   },
-  openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
-  bom: {
-    export: (csv: string, defaultName: string) =>
-      ipcRenderer.invoke('bom:export', csv, defaultName)
-  },
+  openExternal: (url) => invoke('shell:openExternal', url),
   file: {
-    exportText: (args: {
-      content: string
-      defaultName: string
-      filterName: string
-      extensions: string[]
-    }) => ipcRenderer.invoke('file:exportText', args),
-    readText: (args: { filterName: string; extensions: string[] }) =>
-      ipcRenderer.invoke('file:readText', args)
+    exportText: (args) => invoke('file:exportText', args),
+    readText: (args) => invoke('file:readText', args)
   },
   report: {
-    exportPdf: (html: string, defaultName: string) =>
-      ipcRenderer.invoke('report:exportPdf', { html, defaultName })
+    exportPdf: (html, defaultName) => invoke('report:exportPdf', { html, defaultName })
   },
   recent: {
-    get: () => ipcRenderer.invoke('recent:get'),
-    add: (entry: { name: string; path: string }) =>
-      ipcRenderer.invoke('recent:add', entry)
+    get: () => invoke('recent:get'),
+    add: (entry) => invoke('recent:add', entry)
   },
   partLookup: {
-    search: (query: string) => ipcRenderer.invoke('part-lookup:search', query)
+    search: (query) => invoke('part-lookup:search', query)
+  },
+  app: {
+    setTheme: (theme) => invoke('app:setTheme', theme),
+    closeAfterSave: () => invoke('app:closeAfterSave'),
+    takePendingFile: () => invoke('app:takePendingFile'),
+    on: (event, cb) => {
+      if (!EVENTS.has(event)) throw new Error(`Unknown event ${String(event)}`)
+      const listener = (_e: IpcRendererEvent, payload: unknown) => cb(payload as never)
+      ipcRenderer.on(event, listener)
+      return () => ipcRenderer.removeListener(event, listener)
+    }
   }
 }
 
 contextBridge.exposeInMainWorld('ww', api)
-
-export type WwApi = typeof api

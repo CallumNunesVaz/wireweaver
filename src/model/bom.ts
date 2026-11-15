@@ -1,4 +1,5 @@
 import type { Money, Project } from './types'
+import { csvCell } from './csv'
 import type { LibraryLike } from './derivation'
 import { resolveEndpoint } from './derivation'
 import { formatMoney } from './currency'
@@ -129,10 +130,7 @@ export function toCsv(rows: BomRow[]): string {
     'Ext Cost',
     'Weight (g)'
   ]
-  const esc = (v: string | number) => {
-    const s = String(v)
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-  }
+  const esc = csvCell
   const lines = [header.join(',')]
   for (const r of rows) {
     const ext = r.cost
@@ -171,7 +169,12 @@ export async function exportBomCsv(
   try {
     const csv = toCsv(buildBom(project, lib))
     // Await so a rejected bridge call is caught rather than escaping the try.
-    return await window.ww.bom.export(csv, `${project.name || 'wireweaver'}-bom.csv`)
+    return await window.ww.file.exportText({
+      content: csv,
+      defaultName: `${project.name || 'wireweaver'}-bom.csv`,
+      filterName: 'CSV',
+      extensions: ['csv']
+    })
   } catch (e) {
     return { canceled: false, error: e instanceof Error ? e.message : 'Unknown error' }
   }

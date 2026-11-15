@@ -189,7 +189,7 @@ function AssemblySection() {
         <P>Each harness edge shows:</P>
         <ul className="list-disc list-inside space-y-1 ml-2">
           <li>The <strong>harness name</strong>.</li>
-          <li>A coloured status icon: <span className="text-[#3fb27f]">green check</span> = wired, <span className="text-[#c48a2f]">amber</span> = partial, <span className="text-[#7a808c]">grey</span> = unwired, <span className="text-[#e5484d]">red</span> = invalid.</li>
+          <li>A coloured status icon: <span className="text-success">green check</span> = wired, <span className="text-warn">amber</span> = partial, <span className="text-neutral">grey</span> = unwired, <span className="text-danger">red</span> = invalid.</li>
           <li><strong>Wire count</strong> (e.g. "5w").</li>
         </ul>
       </Section>
@@ -214,10 +214,10 @@ function HarnessSection() {
           create a wire. A pin can carry at most one wire. Signal classes are colour-coded:
         </P>
         <ul className="list-disc list-inside space-y-0.5 ml-2">
-          <li><span className="text-[#e5484d]">Power</span> — red</li>
-          <li><span className="text-[#84878c]">Ground</span> — grey</li>
-          <li><span className="text-[#5b9bff]">Data</span> — blue</li>
-          <li><span className="text-[#c48a2f]">Shield</span> — amber</li>
+          <li><span className="text-danger">Power</span> — red</li>
+          <li><span className="text-neutral">Ground</span> — grey</li>
+          <li><span className="text-accent">Data</span> — blue</li>
+          <li><span className="text-warn">Shield</span> — amber</li>
           <li><span className="text-muted">NC</span> — dark (not connected)</li>
         </ul>
       </Section>

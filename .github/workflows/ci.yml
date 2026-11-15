@@ -14,6 +14,12 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      - run: npm run lint
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - name: End-to-end smoke test
+        run: |
+          sudo apt-get update && sudo apt-get install -y xvfb
+          npm i --no-save playwright-core
+          xvfb-run -a npm run test:e2e

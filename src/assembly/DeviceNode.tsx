@@ -1,7 +1,7 @@
 import { memo, useMemo } from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
 import { Cpu } from 'lucide-react'
-import { useLibraryStore } from '../stores/libraryStore'
+import { useEffectiveLibrary } from '../stores/effectiveLibrary'
 import { useProjectStore } from '../stores/projectStore'
 import { useUiStore } from '../stores/uiStore'
 import { imageUrl } from '../shared/useImage'
@@ -17,6 +17,8 @@ const SIDE_TO_POSITION: Record<PortSide, Position> = {
   bottom: Position.Bottom
 }
 
+const EMPTY_PORTS: DevicePort[] = []
+
 export type DeviceNodeData = {
   instanceId: string
   connectSource?: { instanceId: string; portId: string } | null
@@ -27,37 +29,35 @@ function DeviceNodeImpl({ id, selected, data }: NodeProps) {
   const instance = useProjectStore((s) =>
     s.project.deviceInstances.find((d) => d.id === id)
   )
-  const part = useLibraryStore((s) =>
-    instance ? s.parts.find((p) => p.id === instance.partId) : undefined
-  )
-  const templates = useLibraryStore((s) => s.templates)
+  const { lib } = useEffectiveLibrary()
+  const part = instance ? lib.parts[instance.partId] : undefined
   const hoveredPortId = useUiStore(
     (s) => s.hoverEndpoints?.find((e) => e.instanceId === id)?.portId
   )
   const img = imageUrl(part?.imageHash, 'thumb')
+  const device = part && isDevice(part) ? part : undefined
+  const ports = device?.ports ?? EMPTY_PORTS
+
+  // Hooks must run on every render — including the one where this instance
+  // has just been removed — so they all sit above the early return below.
+  const portSignals = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const port of ports) {
+      const tpl = lib.templates[port.pinoutTemplateId]
+      map.set(
+        port.id,
+        tpl && tpl.pins.length > 0
+          ? tpl.pins.map((p) => p.signal || '??').join(', ')
+          : port.name
+      )
+    }
+    return map
+  }, [ports, lib])
 
   if (!instance) return null
-  const device = part && isDevice(part) ? part : undefined
-  const ports = device?.ports ?? []
 
   const isConnectionTarget =
     nodeData.connectSource != null && nodeData.connectSource.instanceId !== id
-
-  // Compute signal strings per port — only the template data is needed.
-  const portSignals = useMemo(() => {
-    if (ports.length === 0) return new Map<string, string>()
-    const map = new Map<string, string>()
-    for (const port of ports) {
-      const tpl = templates.find((t) => t.id === port.pinoutTemplateId)
-      if (!tpl || tpl.pins.length === 0) {
-        map.set(port.id, port.name)
-        continue
-      }
-      const signals = tpl.pins.map((p) => p.signal || '??').join(', ')
-      map.set(port.id, signals)
-    }
-    return map
-  }, [ports, templates])
 
   const bySide: Record<PortSide, DevicePort[]> = {
     left: [],
@@ -82,8 +82,8 @@ function DeviceNodeImpl({ id, selected, data }: NodeProps) {
         )}
         <div className="min-w-0">
           <div className="truncate text-xs font-semibold">{instance.label}</div>
-          <div className="truncate text-[10px] text-muted">
-            {device ? device.name : 'missing device part'}
+          <div className={`truncate text-[11px] ${device ? 'text-muted' : 'text-danger'}`}>
+            {device ? device.name : 'Part missing from library'}
           </div>
         </div>
       </div>
@@ -99,7 +99,7 @@ function DeviceNodeImpl({ id, selected, data }: NodeProps) {
         </div>
       )}
 
-      <div className="px-2 py-1.5 text-[10px] text-muted">
+      <div className="px-2 py-1.5 text-[11px] text-muted">
         {ports.length} port{ports.length === 1 ? '' : 's'}
       </div>
 
@@ -122,20 +122,21 @@ function DeviceNodeImpl({ id, selected, data }: NodeProps) {
               type="source"
               position={pos}
               isConnectableStart
-              title={portSignals.get(port.id) || port.name}
+              title={`${port.name}: ${portSignals.get(port.id) || 'no pinout'}`}
+              aria-label={`Port ${port.name}`}
               style={{
                 ...style,
                 width: connectTarget ? 12 : 10,
                 height: connectTarget ? 12 : 10,
                 background: highlight
-                  ? '#5b9bff'
+                  ? 'var(--color-accent)'
                   : connectTarget
-                    ? 'rgba(91,155,255,0.5)'
-                    : '#8b8f98',
+                    ? 'rgb(var(--rgb-accent) / 0.5)'
+                    : 'var(--color-neutral)',
                 border: connectTarget
-                  ? '2px solid #5b9bff'
-                  : '2px solid #14161b',
-                boxShadow: connectTarget ? '0 0 6px rgba(91,155,255,0.5)' : 'none'
+                  ? '2px solid var(--color-accent)'
+                  : '2px solid var(--color-handle-ring)',
+                boxShadow: connectTarget ? '0 0 6px rgb(var(--rgb-accent) / 0.5)' : 'none'
               }}
             />
             <Handle
@@ -149,7 +150,7 @@ function DeviceNodeImpl({ id, selected, data }: NodeProps) {
                 height: connectTarget ? 18 : 14,
                 background: 'transparent',
                 border: connectTarget
-                  ? '2px dashed rgba(91,155,255,0.5)'
+                  ? '2px dashed rgb(var(--rgb-accent) / 0.5)'
                   : '2px solid transparent',
                 borderRadius: '50%',
                 zIndex: -1
@@ -174,7 +175,7 @@ const PortLabel = memo(function PortLabel({
   name: string
   highlight: boolean
 }) {
-  const base = 'pointer-events-none absolute whitespace-nowrap text-[9px] '
+  const base = 'pointer-events-none absolute whitespace-nowrap text-[11px] '
   const color = highlight ? 'text-accent' : 'text-muted'
   const style: React.CSSProperties = {}
   let cls = base + color + ' '

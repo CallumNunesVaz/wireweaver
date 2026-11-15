@@ -3,26 +3,63 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Design tokens. Every colour used by components comes from here so both
+ * themes stay complete; components must not hard-code hex values.
+ */
 :root {
-  --color-panel: #1b1e24;
-  --color-panelalt: #232730;
-  --color-edge: #2f343f;
-  --color-ink: #e7e9ee;
-  --color-muted: #9aa1ad;
-  --color-accent: #5b9bff;
-  --color-bg: #14161b;
+  --rgb-bg: 20 22 27;
+  --rgb-panel: 27 30 36;
+  --rgb-panelalt: 35 39 48;
+  --rgb-edge: 47 52 63;
+  --rgb-ink: 231 233 238;
+  --rgb-muted: 154 161 173;
+  --rgb-accent: 91 155 255;
+  --rgb-accent-ink: 255 255 255;
+
+  --rgb-danger: 240 89 94;
+  --rgb-warn: 224 178 92;
+  --rgb-success: 63 178 127;
+  --rgb-neutral: 139 143 152;
+
+  --color-bg: rgb(var(--rgb-bg));
+  --color-panel: rgb(var(--rgb-panel));
+  --color-panelalt: rgb(var(--rgb-panelalt));
+  --color-edge: rgb(var(--rgb-edge));
+  --color-ink: rgb(var(--rgb-ink));
+  --color-muted: rgb(var(--rgb-muted));
+  --color-accent: rgb(var(--rgb-accent));
+  --color-accent-ink: rgb(var(--rgb-accent-ink));
+  --color-danger: rgb(var(--rgb-danger));
+  --color-warn: rgb(var(--rgb-warn));
+  --color-success: rgb(var(--rgb-success));
+  --color-neutral: rgb(var(--rgb-neutral));
+
+  /* Canvas-specific */
+  --color-handle-ring: var(--color-bg);
+  --color-mask: rgba(0, 0, 0, 0.55);
+  --color-backdrop: rgba(0, 0, 0, 0.5);
 
   color-scheme: dark;
 }
 
-:root[data-theme="light"] {
-  --color-panel: #ffffff;
-  --color-panelalt: #f0f1f5;
-  --color-edge: #d1d5db;
-  --color-ink: #111827;
-  --color-muted: #6b7280;
-  --color-accent: #3b82f6;
-  --color-bg: #f5f6fa;
+:root[data-theme='light'] {
+  --rgb-bg: 245 246 250;
+  --rgb-panel: 255 255 255;
+  --rgb-panelalt: 240 241 245;
+  --rgb-edge: 209 213 219;
+  --rgb-ink: 17 24 39;
+  --rgb-muted: 91 98 112;
+  --rgb-accent: 37 99 235;
+  --rgb-accent-ink: 255 255 255;
+
+  --rgb-danger: 198 40 46;
+  --rgb-warn: 154 98 0;
+  --rgb-success: 29 127 83;
+  --rgb-neutral: 107 114 128;
+
+  --color-mask: rgba(17, 24, 39, 0.12);
+  --color-backdrop: rgba(17, 24, 39, 0.35);
 
   color-scheme: light;
 }
@@ -49,6 +86,12 @@ select {
   user-select: text;
 }
 
+/* Visible keyboard focus everywhere; mouse clicks don't show the ring. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
 /* Thin scrollbars for panes */
 *::-webkit-scrollbar {
   width: 10px;
@@ -64,28 +107,44 @@ select {
 
 @layer components {
   .ww-input {
-    @apply w-full rounded bg-panelalt border border-edge px-2 py-1 text-ink
-      outline-none focus:border-accent placeholder:text-muted;
+    @apply w-full rounded border border-edge bg-panelalt px-2 py-1 text-ink
+      placeholder:text-muted focus:border-accent;
+  }
+  .ww-input:focus-visible {
+    outline: 1px solid var(--color-accent);
+    outline-offset: 0;
   }
   .ww-label {
-    @apply block text-[11px] uppercase tracking-wide text-muted mb-1;
+    @apply mb-1 block text-[11px] uppercase tracking-wide text-muted;
   }
   .ww-btn {
-    @apply inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-ink
-      bg-panelalt border border-edge hover:border-accent hover:bg-edge
-      transition-colors disabled:opacity-40 disabled:cursor-not-allowed;
+    @apply inline-flex items-center gap-1.5 rounded border border-edge bg-panelalt px-2.5 py-1.5
+      text-ink transition-colors hover:border-accent hover:bg-edge
+      disabled:cursor-not-allowed disabled:opacity-40;
   }
   .ww-btn-primary {
-    @apply inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 font-medium
-      bg-accent text-white hover:brightness-110 transition;
+    @apply inline-flex items-center gap-1.5 rounded bg-accent px-2.5 py-1.5 font-medium
+      text-accent-ink transition hover:brightness-110
+      disabled:cursor-not-allowed disabled:opacity-40;
+  }
+  .ww-icon-btn {
+    @apply inline-flex items-center justify-center rounded p-0.5 text-muted hover:bg-edge
+      hover:text-ink;
   }
   .ww-chip {
-    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px]
-      bg-panelalt border border-edge text-muted;
+    @apply inline-flex items-center gap-1 rounded-full border border-edge bg-panelalt px-2 py-0.5
+      text-[11px] text-muted;
+  }
+  .ww-menu {
+    @apply min-w-[190px] rounded border border-edge bg-panel py-1 shadow-xl;
+  }
+  .ww-menu-item {
+    @apply flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-panelalt
+      focus:bg-panelalt focus:outline-none disabled:cursor-not-allowed disabled:opacity-40;
   }
 }
 
-/* React Flow theme-aware */
+/* React Flow, theme-aware */
 .react-flow {
   background: var(--color-bg);
 }
@@ -102,7 +161,6 @@ select {
   contain: layout style;
 }
 
-/* Minimal shadow — the drop-shadow filter on selected nodes is enough. */
 .react-flow__node > div {
   box-shadow: none;
   outline: 1px solid var(--color-edge);
@@ -111,16 +169,29 @@ select {
   outline-color: var(--color-accent);
 }
 
-/* Dark theme overrides for React Flow controls (they use inline styles) */
+/* React Flow controls use inline styles; override for both themes. */
 .react-flow__controls-button {
   background: var(--color-panel);
   border-color: var(--color-edge);
   fill: var(--color-ink);
+  color: var(--color-ink);
 }
 .react-flow__controls-button:hover {
   background: var(--color-panelalt);
 }
+.react-flow__controls-button svg {
+  fill: currentColor;
+}
 
 .react-flow__minimap {
   background: var(--color-panel);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0ms !important;
+    animation-duration: 0ms !important;
+  }
 }

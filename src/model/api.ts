@@ -59,6 +59,8 @@ import {
 } from './revisions'
 import { createSubassembly as makeSubassembly, instantiateSubassemblyHarness } from './subassembly'
 import { withSnapshots } from './snapshot'
+import { nextSpliceName, planAutoWire } from './wiring'
+import { parseProjectFile, serializeProjectFile } from './project-file'
 
 // ---------------------------------------------------------------------------
 // Workspace
@@ -86,23 +88,22 @@ export function createWorkspace(name = 'Untitled'): Workspace {
   }
 }
 
-/** Load a parsed `.wwv` project, seeding the working library from its snapshots. */
-export function loadWorkspace(data: Project): Workspace {
+/**
+ * Load parsed `.wwv` JSON (validated and migrated), seeding the working
+ * library from its snapshots. Throws FileFormatError for invalid files.
+ */
+export function loadWorkspace(data: unknown): Workspace {
+  const project = parseProjectFile(data)
   return {
-    project: {
-      ...data,
-      deviceInstances: data.deviceInstances ?? [],
-      harnesses: (data.harnesses ?? []).map(normalizeHarness),
-      revisions: data.revisions ?? []
-    },
-    parts: Object.values(data.partSnapshots ?? {}),
-    templates: Object.values(data.templateSnapshots ?? {})
+    project,
+    parts: Object.values(project.partSnapshots ?? {}),
+    templates: Object.values(project.templateSnapshots ?? {})
   }
 }
 
 /** Serialize to the on-disk `.wwv` shape, embedding snapshots for portability. */
 export function serializeWorkspace(ws: Workspace): Project {
-  return withSnapshots(ws.project, ws.parts, ws.templates)
+  return serializeProjectFile(withSnapshots(ws.project, ws.parts, ws.templates))
 }
 
 export function libOf(ws: Workspace): LibraryLike {
@@ -111,17 +112,6 @@ export function libOf(ws: Workspace): LibraryLike {
   const templates: Record<string, PinoutTemplate> = {}
   for (const t of ws.templates) templates[t.id] = t
   return { parts, templates }
-}
-
-function normalizeHarness(h: Harness): Harness {
-  return {
-    ...h,
-    endpoints: h.endpoints ?? [],
-    wires: h.wires ?? [],
-    segments: h.segments ?? [],
-    accessories: h.accessories ?? [],
-    splices: h.splices ?? []
-  }
 }
 
 function getHarness(ws: Workspace, harnessId: string): Harness {
@@ -588,53 +578,9 @@ export function autoWire(
   const h = getHarness(ws, harnessId)
   const lib = libOf(ws)
   const { resolved } = resolveAllEndpoints(lib, ws.project.deviceInstances, h)
-  const norm = (p: PinDef) => p.signal.trim().toLowerCase()
-  const used = new Set<string>()
-  if (!opts.overwrite) {
-    for (const w of h.wires) {
-      used.add(`${w.from.end}:${w.from.position}`)
-      used.add(`${w.to.end}:${w.to.position}`)
-    }
-  } else {
-    h.wires = []
-  }
-  const added: HarnessWire[] = []
-
-  const pairs: [number, number][] = []
-  for (let i = 0; i < h.endpoints.length; i++) {
-    for (let j = i + 1; j < h.endpoints.length; j++) {
-      if (opts.allPairs || j === i + 1) pairs.push([i, j])
-    }
-  }
-
-  for (const [i, j] of pairs) {
-    const la = endLabel(i)
-    const lb = endLabel(j)
-    const ra = resolved.get(la)
-    const rb = resolved.get(lb)
-    if (!ra || !rb) continue
-    for (const pa of ra.pins) {
-      const sa = norm(pa)
-      if (!sa || pa.signalClass === 'nc') continue
-      if (used.has(`${la}:${pa.position}`)) continue
-      const match = rb.pins.find(
-        (pb) =>
-          norm(pb) === sa &&
-          pb.signalClass !== 'nc' &&
-          !used.has(`${lb}:${pb.position}`)
-      )
-      if (!match) continue
-      const wire: HarnessWire = {
-        id: nanoid(),
-        from: { end: la, position: pa.position },
-        to: { end: lb, position: match.position }
-      }
-      h.wires.push(wire)
-      added.push(wire)
-      used.add(`${la}:${pa.position}`)
-      used.add(`${lb}:${match.position}`)
-    }
-  }
+  if (opts.overwrite) h.wires = []
+  const added = planAutoWire(resolved, h.endpoints.length, h.wires, { allPairs: opts.allPairs })
+  h.wires.push(...added)
   return added
 }
 
@@ -685,7 +631,7 @@ export function addSplice(
   const h = getHarness(ws, harnessId)
   const splice: HarnessSplice = {
     id: nanoid(),
-    name: name ?? `Splice ${nanoid().slice(0, 6)}`,
+    name: name ?? nextSpliceName(h.splices),
     wireIds
   }
   h.splices = [...(h.splices ?? []), splice]

@@ -10,7 +10,6 @@ import {
   type Node,
   type Edge,
   type Connection,
-  type NodeChange,
   type EdgeChange,
   type NodeTypes,
   type EdgeTypes
@@ -23,7 +22,10 @@ import { autoLayout } from './autoLayout'
 import { ContextMenu, type CtxItem } from '../shared/ContextMenu'
 import { toast } from '../shared/toast'
 import { promptDialog } from '../shared/dialogs'
-import { useLibraryStore, selectLibraryLike } from '../stores/libraryStore'
+import { useLibraryStore } from '../stores/libraryStore'
+import { useEffectiveLibrary } from '../stores/effectiveLibrary'
+import { useAnyOverlayOpen, isTextTarget, topOverlay } from '../shared/overlay'
+import { useRafNodeChanges } from '../shared/useRafNodeChanges'
 import { useProjectStore, coalesceUndo } from '../stores/projectStore'
 import { useUiStore } from '../stores/uiStore'
 import { validateHarness, type HarnessValidation } from '../model/derivation'
@@ -37,18 +39,20 @@ type Menu =
   | { x: number; y: number; kind: 'node' | 'edge'; id: string }
 
 export function AssemblyView() {
-  const { screenToFlowPosition, fitView } = useReactFlow()
+  const { screenToFlowPosition, fitView, getNodes } = useReactFlow()
+  const overlayOpen = useAnyOverlayOpen()
+  const fitViewRequest = useUiStore((s) => s.fitViewRequest)
 
   const instances = useProjectStore((s) => s.project.deviceInstances)
   const harnesses = useProjectStore((s) => s.project.harnesses)
   const addInstance = useProjectStore((s) => s.addInstance)
-  const updatePos = useProjectStore((s) => s.updateInstancePosition)
+  const updatePositions = useProjectStore((s) => s.updateInstancePositions)
   const removeInstance = useProjectStore((s) => s.removeInstance)
+  const removeInstances = useProjectStore((s) => s.removeInstances)
   const duplicateInstance = useProjectStore((s) => s.duplicateInstance)
   const removeHarness = useProjectStore((s) => s.removeHarness)
 
-  const parts = useLibraryStore((s) => s.parts)
-  const templates = useLibraryStore((s) => s.templates)
+  const { lib, parts } = useEffectiveLibrary()
 
   const selection = useUiStore((s) => s.selection)
   const multiSelectedIds = useUiStore((s) => s.multiSelectedIds)
@@ -70,40 +74,15 @@ export function AssemblyView() {
   // the store whenever the instance list changes (add/remove/undo/redo).
   const [nodes, setNodes, onNodesChangeRaw] = useNodesState<Node>([])
 
-  // RAF-batched position updates: every drag frame we queue position changes
-  // into a pending buffer and flush them all in one React state update per
-  // animation frame, dramatically reducing re-renders during drag.
-  const pendingNodeChanges = useRef<NodeChange[]>([])
-  const rafId = useRef(0)
-
-  const onNodesChange = useCallback(
-    (changes: NodeChange[]) => {
-      // Non-position changes (remove, select, etc.) must apply immediately.
-      const immediate = changes.filter((c) => c.type !== 'position' || (c.type === 'position' && c.dragging === false))
-      const dragPositions = changes.filter((c) => c.type === 'position' && c.dragging === true)
-
-      if (immediate.length > 0) onNodesChangeRaw(immediate)
-
-      // Flush position updates for drag-end (persist to store).
-      for (const c of immediate) {
-        if (c.type === 'position' && c.position) updatePos(c.id, c.position)
-        else if (c.type === 'remove') removeInstance(c.id)
-      }
-
-      // Batch ongoing-drag position changes into one RAF-tick update.
-      if (dragPositions.length > 0) {
-        pendingNodeChanges.current.push(...dragPositions)
-        if (rafId.current === 0) {
-          rafId.current = requestAnimationFrame(() => {
-            rafId.current = 0
-            const batch = pendingNodeChanges.current
-            pendingNodeChanges.current = []
-            onNodesChangeRaw(batch)
-          })
-        }
-      }
-    },
-    [onNodesChangeRaw, updatePos, removeInstance]
+  // Drag frames batch to one render per animation frame; drag end commits
+  // every moved node as a single undo step.
+  const onNodesChange = useRafNodeChanges(
+    onNodesChangeRaw,
+    (moves) => updatePositions(moves),
+    (ids) => {
+      removeInstances(ids)
+      select(null)
+    }
   )
 
   useEffect(() => {
@@ -122,12 +101,7 @@ export function AssemblyView() {
           (selection.id === inst.id || multiSelectedIds.includes(inst.id))
       }))
     )
-  }, [instances, connectSource, selection, multiSelectedIds])
-
-  const lib = useMemo(
-    () => selectLibraryLike({ parts, templates }),
-    [parts, templates]
-  )
+  }, [instances, connectSource, selection, multiSelectedIds, setNodes])
 
   const validations = useMemo(() => {
     const m = new Map<string, HarnessValidation>()
@@ -176,8 +150,11 @@ export function AssemblyView() {
     (changes: EdgeChange[]) => {
       for (const c of changes) {
         if (c.type === 'remove') {
+          // React Flow also emits edge removals for edges attached to a
+          // deleted device; those are pruned by removeInstances instead of
+          // deleting the whole (possibly multi-endpoint) harness.
           const edge = edgesRef.current.find((e) => e.id === c.id)
-          if (edge?.data?.harnessId) removeHarness(edge.data.harnessId as string)
+          if (edge?.selected && edge.data?.harnessId) removeHarness(edge.data.harnessId as string)
         }
       }
     },
@@ -236,21 +213,33 @@ export function AssemblyView() {
       // Template drop onto a device node — adds port to the device part.
       const templateId = e.dataTransfer.getData('application/ww-template')
       if (templateId) {
-        const hit = instances.find(
-          (inst) =>
-            position.x >= inst.position.x &&
-            position.x <= inst.position.x + 180 &&
-            position.y >= inst.position.y &&
-            position.y <= inst.position.y + 110
-        )
+        const node = getNodes().find((n) => {
+          const w = n.measured?.width ?? 180
+          const h = n.measured?.height ?? 110
+          return (
+            position.x >= n.position.x &&
+            position.x <= n.position.x + w &&
+            position.y >= n.position.y &&
+            position.y <= n.position.y + h
+          )
+        })
+        const hit = node ? instances.find((i) => i.id === node.id) : undefined
+        if (!hit) {
+          toast('Drop a pinout template onto a placed device to add a port.', 'info')
+          return
+        }
         if (hit) {
           const lib = useLibraryStore.getState()
           const devPart = lib.parts.find((p) => p.id === hit.partId)
           if (devPart && isDevice(devPart)) {
             const tpl = lib.templates.find((t) => t.id === templateId)
             const defaultName = tpl?.name ?? `Port ${devPart.ports.length + 1}`
+            const sharing = instances.filter((i) => i.partId === devPart.id).length
             const portName = await promptDialog({
-              title: 'Add port',
+              title: `Add port to "${devPart.name}"`,
+              message: `This changes the library part, so every ${devPart.name} gets the port${
+                sharing > 1 ? ` (${sharing} placed in this project)` : ''
+              }, including in other projects. Library edits can't be undone.`,
               label: 'Port name',
               defaultValue: defaultName,
               confirmLabel: 'Add port'
@@ -279,7 +268,7 @@ export function AssemblyView() {
       const id = addInstance(partId, position, label)
       select({ type: 'instance', id })
     },
-    [parts, instances, screenToFlowPosition, addInstance, select]
+    [parts, instances, screenToFlowPosition, addInstance, select, getNodes]
   )
 
   const onEdgeMouseEnter = useCallback(
@@ -301,8 +290,16 @@ export function AssemblyView() {
 
   const runAutoLayout = useCallback(() => {
     const positions = autoLayout(instances, harnesses)
-    for (const [id, pos] of Object.entries(positions)) updatePos(id, pos)
-  }, [instances, harnesses, updatePos])
+    updatePositions(Object.entries(positions).map(([id, position]) => ({ id, position })))
+    setTimeout(() => fitView({ padding: 0.3, duration: 300 }), 50)
+  }, [instances, harnesses, updatePositions, fitView])
+
+  // Fit the view when asked (e.g. right after a project is opened).
+  useEffect(() => {
+    if (fitViewRequest === 0) return
+    const t = setTimeout(() => fitView({ padding: 0.3, duration: 200 }), 60)
+    return () => clearTimeout(t)
+  }, [fitViewRequest, fitView])
 
   // Alignment helpers: operate on all multi-selected instances + primary selection.
   const selectedInstanceIds = useMemo(() => {
@@ -408,37 +405,24 @@ export function AssemblyView() {
     [instances, parts, addInstance]
   )
 
-  // Arrow-key nudge for the selected device; coalesced so holding a key makes
-  // one undo step, not dozens.
+  // Arrow-key nudge for the selected devices; coalesced so holding a key
+  // makes one undo step, not dozens.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const sel = useUiStore.getState().selection
-      if (!sel || sel.type !== 'instance') return
-      if (
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement ||
-        e.target instanceof HTMLSelectElement
-      )
-        return
-      let dx = 0
-      let dy = 0
+      if (topOverlay() || isTextTarget(e.target) || e.defaultPrevented) return
+      const ui = useUiStore.getState()
+      const ids = new Set(ui.multiSelectedIds)
+      if (ui.selection?.type === 'instance') ids.add(ui.selection.id)
+      if (ids.size === 0) return
       const step = e.shiftKey ? 10 : 1
-      if (e.key === 'ArrowLeft') dx = -step
-      else if (e.key === 'ArrowRight') dx = step
-      else if (e.key === 'ArrowUp') dy = -step
-      else if (e.key === 'ArrowDown') dy = step
-      else return
+      const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key]
+      if (!d) return
       e.preventDefault()
       const st = useProjectStore.getState()
-      const inst = st.project.deviceInstances.find((i) => i.id === sel.id)
-      if (inst) {
-        coalesceUndo(() =>
-          st.updateInstancePosition(sel.id, {
-            x: inst.position.x + dx,
-            y: inst.position.y + dy
-          })
-        )
-      }
+      const moves = st.project.deviceInstances
+        .filter((i) => ids.has(i.id))
+        .map((i) => ({ id: i.id, position: { x: i.position.x + d[0], y: i.position.y + d[1] } }))
+      coalesceUndo(() => st.updateInstancePositions(moves))
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -464,7 +448,7 @@ export function AssemblyView() {
     }
     if (menu.kind === 'node') {
       const inst = useProjectStore.getState().project.deviceInstances.find((i) => i.id === menu.id)
-      const part = inst ? useLibraryStore.getState().parts.find((p) => p.id === inst.partId) : undefined
+      const part = inst ? lib.parts[inst.partId] : undefined
       return [
         {
           label: 'Edit part',
@@ -496,12 +480,12 @@ export function AssemblyView() {
           onClick: () => duplicateInstance(menu.id)
         },
         {
-          label: 'Delete',
+          label: 'Delete device',
           icon: <Trash2 size={14} />,
           danger: true,
           onClick: () => {
-            removeInstance(menu.id)
             select(null)
+            removeInstance(menu.id)
           }
         }
       ]
@@ -531,7 +515,8 @@ export function AssemblyView() {
     removeHarness,
     openHarnessEditor,
     openPartEditor,
-    select
+    select,
+    lib
   ])
 
   return (
@@ -589,10 +574,12 @@ export function AssemblyView() {
           if (nodeId && handleId) setConnectSource({ instanceId: nodeId, portId: handleId })
         }}
         onConnectEnd={() => setConnectSource(null)}
-        connectionLineStyle={{ stroke: '#5b9bff', strokeWidth: 2, strokeDasharray: '5 4', opacity: 0.8 }}
+        connectionLineStyle={{ stroke: 'var(--color-accent)', strokeWidth: 2, strokeDasharray: '5 4', opacity: 0.8 }}
         connectionRadius={50}
         fitView
-        deleteKeyCode={['Backspace', 'Delete']}
+        // This canvas stays mounted under full-screen overlays (Harness
+        // Editor, Library Manager); never let Delete reach it from there.
+        deleteKeyCode={overlayOpen ? null : ['Backspace', 'Delete']}
         selectNodesOnDrag={false}
         proOptions={{ hideAttribution: true }}
       >
@@ -603,10 +590,11 @@ export function AssemblyView() {
           color="var(--color-edge)"
         />
         <MiniMap
+          ariaLabel="Overview map"
           pannable
           zoomable
           nodeColor="var(--color-edge)"
-          maskColor="rgba(0,0,0,0.55)"
+          maskColor="var(--color-mask)"
           style={{ background: 'var(--color-panel)' }}
         />
         <Controls />

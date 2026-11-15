@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { Handle, Position, type NodeProps } from '@xyflow/react'
+import type { NodeProps } from '@xyflow/react'
 import { Link2 } from 'lucide-react'
 import { useLibraryStore } from '../stores/libraryStore'
 import { isWire, type WirePart } from '../model/types'
@@ -8,19 +8,31 @@ export type SpliceNodeData = {
   spliceId: string
   name: string
   wirePartId?: string
+  wireCount: number
   onDropWire: (spliceId: string, wirePart: WirePart) => void
+  onHover: (spliceId: string | null) => void
 }
 
+/**
+ * A splice joins several wires at one point. It is drawn as a free-floating
+ * marker; hovering it highlights the wires it joins (wires are edges and
+ * React Flow cannot attach edges to edges, so membership is shown by
+ * highlighting rather than by drawing connectors).
+ */
 function SpliceNodeImpl({ data }: NodeProps) {
   const d = data as SpliceNodeData
-  const wirePart = d.wirePartId
-    ? useLibraryStore((s) => s.parts.find((p) => p.id === d.wirePartId && isWire(p))) as WirePart | undefined
-    : undefined
+  // Always call the hook; the selector returns undefined when unassigned.
+  const wirePart = useLibraryStore((s) =>
+    d.wirePartId ? s.parts.find((p) => p.id === d.wirePartId && isWire(p)) : undefined
+  ) as WirePart | undefined
 
   return (
     <div
-      className="relative flex flex-col items-center justify-center rounded border-2 border-accent bg-panelalt p-2 shadow-lg"
+      className="relative flex items-center justify-center rounded border-2 border-accent bg-panelalt shadow-lg"
       style={{ width: 64, height: 64, transform: 'rotate(45deg)' }}
+      title={`${d.name} · joins ${d.wireCount} wires${wirePart ? ` · ${wirePart.name}` : ''}\nDrop a wire part here to assign it`}
+      onMouseEnter={() => d.onHover(d.spliceId)}
+      onMouseLeave={() => d.onHover(null)}
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes('application/ww-harness-wire')) {
           e.preventDefault()
@@ -39,33 +51,9 @@ function SpliceNodeImpl({ data }: NodeProps) {
     >
       <div style={{ transform: 'rotate(-45deg)' }} className="text-center">
         <Link2 size={14} className="mx-auto text-accent" />
-        <div className="text-[9px] font-semibold mt-0.5">{d.name}</div>
-        {wirePart && <div className="text-[8px] text-muted truncate max-w-[50px]">{wirePart.name}</div>}
+        <div className="mt-0.5 text-[11px] font-semibold leading-tight">{d.name}</div>
+        <div className="text-[11px] leading-tight text-muted">{d.wireCount}w</div>
       </div>
-      <Handle
-        type="source"
-        position={Position.Top}
-        id={`${d.spliceId}-top`}
-        style={{ background: '#5b9bff', width: 10, height: 10, border: '2px solid #14161b' }}
-      />
-      <Handle
-        type="target"
-        position={Position.Bottom}
-        id={`${d.spliceId}-bottom`}
-        style={{ background: '#5b9bff', width: 10, height: 10, border: '2px solid #14161b' }}
-      />
-      <Handle
-        type="source"
-        position={Position.Left}
-        id={`${d.spliceId}-left`}
-        style={{ background: '#5b9bff', width: 10, height: 10, border: '2px solid #14161b' }}
-      />
-      <Handle
-        type="target"
-        position={Position.Right}
-        id={`${d.spliceId}-right`}
-        style={{ background: '#5b9bff', width: 10, height: 10, border: '2px solid #14161b' }}
-      />
     </div>
   )
 }

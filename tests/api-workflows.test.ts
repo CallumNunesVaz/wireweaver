@@ -127,7 +127,7 @@ describe('API harness editing', () => {
   })
 
   it('removes an endpoint and remaps surviving wires', () => {
-    const { ws, h, a, b } = build()
+    const { ws, h, a } = build()
     const dev = ws.parts.find((p) => p.id === a.partId)!
     if (dev.kind !== 'device') throw new Error('expected device')
     const c = api.addDevice(ws, { partId: a.partId, label: 'Third' })

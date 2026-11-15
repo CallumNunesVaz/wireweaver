@@ -1,94 +1,180 @@
 /**
- * Smoke test for the WireWeaver Electron app.
+ * End-to-end smoke test for the WireWeaver Electron app, driving the built
+ * app with Playwright. Covers the flows the review found crashing or broken:
+ * deleting a device, undo, new project over a populated canvas, Escape
+ * layering, and opening the harness editor from the Library Manager.
  *
- * This test requires the app to be built and running in a Playwright-driven
- * Electron environment. It is skipped by default and intended for E2E CI.
- *
- * Usage:
- *   1. Build the app:   npm run build
- *   2. Install Playwright: npx playwright install
- *   3. Run:   npx vitest run tests/smoke.test.ts
- *
- * You can also import helpers manually:
- *   import { launch, helpers, closeApp } from '../.claude/skills/run-desktop/driver.mjs'
- *
- * The test flow:
- *   1. Launch app → see starter library
- *   2. Create a device from the library
- *   3. Drop second device on canvas
- *   4. Create a harness between them
- *   5. Verify harness appears
+ * Opt-in (needs a build and a display):
+ *   npm run build && npm i --no-save playwright-core
+ *   WW_E2E=1 npx vitest run tests/smoke.test.ts        # (xvfb-run -a … on CI)
  */
-
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 
 const isE2E = process.env['WW_E2E'] === '1' || process.env['RUN_E2E'] === '1'
 
-// Skipped (not silently passing) unless E2E is explicitly enabled, so the
-// default unit run reports these honestly rather than as green no-ops.
-describe.skipIf(!isE2E)('WireWeaver smoke test (E2E)', () => {
+const PROJECT = {
+  schemaVersion: 2,
+  id: 'smoke',
+  name: 'Smoke Test',
+  deviceInstances: [
+    { id: 'i-fc', partId: 'seed-dev-fc', label: 'FC', position: { x: 0, y: 0 } },
+    { id: 'i-s1', partId: 'seed-dev-sensor', label: 'Sensor 1', position: { x: 420, y: 0 } },
+    { id: 'i-s2', partId: 'seed-dev-sensor', label: 'Sensor 2', position: { x: 420, y: 260 } }
+  ],
+  harnesses: [
+    {
+      id: 'h1',
+      name: 'CAN Bus',
+      endpoints: [
+        { deviceInstanceId: 'i-fc', portId: 'p-can-a' },
+        { deviceInstanceId: 'i-s1', portId: 'p-can' }
+      ],
+      wires: [{ id: 'w1', from: { end: 'a', position: 2 }, to: { end: 'b', position: 2 } }],
+      segments: [],
+      accessories: [],
+      splices: []
+    }
+  ],
+  partSnapshots: {},
+  templateSnapshots: {},
+  revisions: []
+}
+
+describe.skipIf(!isE2E)('WireWeaver smoke test (E2E)', { timeout: 20_000 }, () => {
   let app: any
   let page: any
   let h: any
+  let dir: string
+  const errors: string[] = []
+
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+  const hasText = (t: string) => page.evaluate((s: string) => document.body.innerText.includes(s), t)
+  const nodeCount = () => page.evaluate(() => document.querySelectorAll('main .react-flow__node').length)
+  const crashed = () => hasText('Something went wrong')
+  /** Titles of open dialogs, bottom to top. */
+  const dialogs = (): Promise<string[]> =>
+    page.evaluate(() =>
+      [...document.querySelectorAll('[role="dialog"]')].map((d) => {
+        const id = d.getAttribute('aria-labelledby')
+        return (id ? document.getElementById(id)?.textContent : d.getAttribute('aria-label')) ?? ''
+      })
+    )
 
   beforeAll(async () => {
-    if (!isE2E) return
-    const { launch, helpers: buildHelpers } = await import(
-      '../.claude/skills/run-desktop/driver.mjs'
-    )
-    const result = await launch()
-    app = result.app
-    page = result.page
-    h = buildHelpers(page)
-  })
+    dir = mkdtempSync(join(tmpdir(), 'ww-smoke-'))
+    const projectPath = join(dir, 'smoke.wwv')
+    writeFileSync(projectPath, JSON.stringify(PROJECT))
+    process.env['WW_CONFIG_DIR'] = join(dir, 'config')
+    process.env['SCREENSHOT_DIR'] = join(dir, 'shots')
+    const driver = await import('../.claude/skills/run-desktop/driver.mjs')
+    const res = await driver.launch({ recent: [{ name: 'Smoke Test', path: projectPath }] })
+    app = res.app
+    page = res.page
+    h = driver.helpers(page, app)
+    page.on('pageerror', (e: Error) => errors.push(e.message))
+    await h.clickTitle('Project actions')
+    await sleep(300)
+    await h.clickText('Recent: Smoke Test')
+    await sleep(1500)
+  }, 60_000)
 
   afterAll(async () => {
-    if (!isE2E || !app) return
-    const { closeApp } = await import('../.claude/skills/run-desktop/driver.mjs')
-    await closeApp(app, page)
-  })
-
-  it('app launches with library sidebar visible', async () => {
-    if (!isE2E) return
-    const sidebar = await page.$('[data-testid="library-sidebar"]')
-    expect(sidebar).toBeTruthy()
-  })
-
-  it('can add a device to the canvas', async () => {
-    if (!isE2E) return
-    // Drag Flight Controller from library to canvas
-    const fc = await page.$('text=Flight Controller')
-    expect(fc).toBeTruthy()
-    await fc.click()
-    await page.mouse.click(400, 300)
-    await page.waitForTimeout(500)
-
-    const nodes = await page.$$('.react-flow__node')
-    expect(nodes.length).toBeGreaterThan(0)
-  })
-
-  it('can create a harness between two devices', async () => {
-    if (!isE2E) return
-    // Add second device
-    await page.mouse.click(600, 300)
-    await page.waitForTimeout(500)
-
-    // Drag from first port handle to second
-    const handles = await page.$$('.react-flow__handle')
-    if (handles.length >= 2) {
-      await h.drag(
-        '.react-flow__handle.source',
-        '.react-flow__handle.target'
-      )
-      await page.waitForTimeout(500)
+    if (app) {
+      const { closeApp } = await import('../.claude/skills/run-desktop/driver.mjs')
+      await closeApp(app, page)
     }
-
-    const edges = await page.$$('.react-flow__edge')
-    expect(edges.length).toBeGreaterThan(0)
+    if (dir) rmSync(dir, { recursive: true, force: true })
   })
 
-  it('takes a screenshot of the final canvas', async () => {
-    if (!isE2E) return
-    await h.ss('smoke-final')
+  it('opens a project from Recent', async () => {
+    expect(await page.$('[data-testid="library-sidebar"]')).toBeTruthy()
+    expect(await nodeCount()).toBe(3)
+  })
+
+  it('deletes a device from the context menu without crashing, and undo restores it', async () => {
+    await page.click('main .react-flow__node[data-id="i-s2"]', { button: 'right' })
+    await sleep(300)
+    await h.clickText('Delete device')
+    await sleep(500)
+    expect(await crashed()).toBe(false)
+    expect(await nodeCount()).toBe(2)
+    await page.click('main .react-flow__pane', { position: { x: 20, y: 400 } })
+    await page.keyboard.press('Control+z')
+    await sleep(500)
+    expect(await nodeCount()).toBe(3)
+  })
+
+  it('keeps Ctrl+Z inside a text field as text undo', async () => {
+    await page.click('main .react-flow__node[data-id="i-s1"]')
+    await sleep(300)
+    const input = page.locator('aside[aria-label="Inspector"] input').first()
+    await input.click()
+    await page.keyboard.press('End')
+    await page.keyboard.type('X')
+    await page.keyboard.press('Control+z')
+    await sleep(300)
+    expect(await nodeCount()).toBe(3)
+  })
+
+  it('opens the ? cheatsheet and closes it with Escape', async () => {
+    await page.click('main .react-flow__pane', { position: { x: 20, y: 400 } })
+    await page.keyboard.press('?')
+    await sleep(300)
+    expect(await hasText('Keyboard Shortcuts')).toBe(true)
+    await page.keyboard.press('Escape')
+    await sleep(300)
+    expect(await hasText('Keyboard Shortcuts')).toBe(false)
+  })
+
+  it('Escape closes only the top-most of two stacked modals', async () => {
+    await page.locator('[data-testid="library-sidebar"] >> text=Flight Controller').first().dblclick()
+    await sleep(500)
+    await h.clickText('New pinout template')
+    await sleep(400)
+    expect(await dialogs()).toEqual(['Edit device', 'New pinout template'])
+    await page.keyboard.press('Escape')
+    await sleep(300)
+    expect(await dialogs()).toEqual(['Edit device'])
+    await page.keyboard.press('Escape')
+    await sleep(300)
+    expect(await dialogs()).toEqual([])
+  })
+
+  it('opens the harness editor on top of the Library Manager', async () => {
+    await page.keyboard.press('Control+l')
+    await sleep(600)
+    await page.locator('[aria-label="Library Manager"] >> text=CAN Bus').first().click()
+    await sleep(300)
+    await h.clickText('Open harness editor')
+    await sleep(800)
+    const top = await page.evaluate(() => {
+      const el = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2)
+      return el?.closest('[role="dialog"]')?.getAttribute('aria-label') ?? null
+    })
+    expect(top).toMatch(/^Harness editor/)
+    await page.keyboard.press('Escape') // closes the editor…
+    await sleep(300)
+    expect(await dialogs()).toEqual(['Library Manager']) // …not the manager
+    await page.keyboard.press('Escape')
+    await sleep(300)
+    expect(await dialogs()).toEqual([])
+  })
+
+  it('starts a new project over a populated canvas without crashing', async () => {
+    await page.keyboard.press('Control+n')
+    await sleep(400)
+    if (await hasText('Unsaved changes')) {
+      await h.clickText("Don't save")
+      await sleep(600)
+    }
+    expect(await crashed()).toBe(false)
+    expect(await nodeCount()).toBe(0)
+  })
+
+  it('recorded no uncaught page errors', () => {
+    expect(errors).toEqual([])
   })
 })

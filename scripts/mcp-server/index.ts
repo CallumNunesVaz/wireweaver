@@ -14,12 +14,41 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import * as readline from 'node:readline'
 import * as api from '../../src/model/api'
-import type { Project } from '../../src/model/types'
 
-const VERSION = '0.2.0'
+const VERSION = '0.3.0'
 
 let ws: api.Workspace = api.createWorkspace()
 let currentPath: string | null = null
+
+/**
+ * Files may only be read or written inside this directory (default: the
+ * current working directory; override with --root <dir> or WW_ROOT). Agents
+ * supply paths, so they must not be able to reach the rest of the disk.
+ */
+let rootDir = process.cwd()
+
+function inRoot(pathArg: string): string {
+  const resolved = path.resolve(rootDir, pathArg)
+  const rel = path.relative(rootDir, resolved)
+  if (rel.startsWith('..') || path.isAbsolute(rel)) {
+    throw new Error(`Path "${pathArg}" is outside the workspace root ${rootDir}`)
+  }
+  if (!resolved.toLowerCase().endsWith('.wwv')) {
+    throw new Error('Project files must have the .wwv extension')
+  }
+  return resolved
+}
+
+function writeAtomic(file: string, content: string): void {
+  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`
+  fs.writeFileSync(tmp, content, 'utf8')
+  try {
+    fs.renameSync(tmp, file)
+  } catch (e) {
+    fs.rmSync(tmp, { force: true })
+    throw e
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Tool registry
@@ -37,17 +66,17 @@ const str = (v: unknown, fallback = ''): string => (typeof v === 'string' ? v : 
 const num = (v: unknown, fallback = 0): number => (typeof v === 'number' ? v : fallback)
 
 function load(pathArg: string): void {
-  const resolved = path.resolve(pathArg)
-  const data = JSON.parse(fs.readFileSync(resolved, 'utf8')) as Project
+  const resolved = inRoot(pathArg)
+  const data: unknown = JSON.parse(fs.readFileSync(resolved, 'utf8'))
   ws = api.loadWorkspace(data)
   currentPath = resolved
 }
 
 function save(pathArg?: string): string {
-  const target = pathArg ? path.resolve(pathArg) : currentPath
+  const target = pathArg ? inRoot(pathArg) : currentPath
   if (!target) throw new Error('No project path set — pass one to save_project')
   fs.mkdirSync(path.dirname(target), { recursive: true })
-  fs.writeFileSync(target, JSON.stringify(api.serializeWorkspace(ws), null, 2), 'utf8')
+  writeAtomic(target, JSON.stringify(api.serializeWorkspace(ws), null, 2))
   currentPath = target
   return target
 }
@@ -696,8 +725,10 @@ function error(id: number | string | null, code: number, message: string): void 
 function printHelp(): void {
   process.stdout.write(
     `WireWeaver MCP server v${VERSION}\n\n` +
-      `Usage: vite-node scripts/mcp-server/index.ts [project.wwv]\n` +
-      `   or: WW_PROJECT=project.wwv vite-node scripts/mcp-server/index.ts\n\n` +
+      `Usage: vite-node scripts/mcp-server/index.ts [--root <dir>] [project.wwv]\n` +
+      `   or: WW_ROOT=<dir> WW_PROJECT=project.wwv vite-node scripts/mcp-server/index.ts\n\n` +
+      `Project files are read and written only inside the workspace root\n` +
+      `(default: the current directory).\n\n` +
       `Speaks MCP (JSON-RPC) over stdio. Tools: ${Object.keys(TOOLS).length}.\n`
   )
 }
@@ -713,7 +744,12 @@ async function main(): Promise<void> {
     return
   }
 
-  const initial = argv.find((a) => !a.startsWith('-')) || process.env['WW_PROJECT']
+  const rootIdx = argv.indexOf('--root')
+  const rootArg = rootIdx >= 0 ? argv[rootIdx + 1] : process.env['WW_ROOT']
+  if (rootArg) rootDir = path.resolve(rootArg)
+  const positional = argv.filter((a, i) => !a.startsWith('-') && !(rootIdx >= 0 && i === rootIdx + 1))
+  const initial = positional[0] || process.env['WW_PROJECT']
+  process.stderr.write(`MCP: workspace root ${rootDir}\n`)
   if (initial) {
     try {
       load(initial)

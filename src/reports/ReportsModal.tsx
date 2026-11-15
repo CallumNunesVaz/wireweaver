@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { FileDown, FileText, Printer, Share2 } from 'lucide-react'
 import { Modal } from '../shared/Modal'
 import { toast } from '../shared/toast'
-import { useLibraryStore, selectLibraryLike } from '../stores/libraryStore'
+import { useEffectiveLibrary } from '../stores/effectiveLibrary'
 import { useProjectStore } from '../stores/projectStore'
 import { useUiStore } from '../stores/uiStore'
 import {
@@ -29,7 +29,7 @@ type Tab = 'wiring' | 'cutlist' | 'netlist' | 'formboard'
 /** Capture the assembly canvas as a PNG data URL; undefined when unavailable. */
 async function captureAssemblyPng(): Promise<string | undefined> {
   try {
-    const el = document.querySelector('.react-flow:not([style*="position: fixed"]) .react-flow__viewport') as HTMLElement | null
+    const el = document.querySelector('main[aria-label="Assembly canvas"] .react-flow__viewport') as HTMLElement | null
     if (!el) return undefined
     const { toPng } = await import('html-to-image')
     return await toPng(el, { backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--color-bg').trim() || '#14161b' })
@@ -42,9 +42,7 @@ export function ReportsModal() {
   const close = useUiStore((s) => s.toggleReports)
   const project = useProjectStore((s) => s.project)
   const setProjectMeta = useProjectStore((s) => s.setProjectMeta)
-  const parts = useLibraryStore((s) => s.parts)
-  const templates = useLibraryStore((s) => s.templates)
-  const lib = useMemo(() => selectLibraryLike({ parts, templates }), [parts, templates])
+  const { lib } = useEffectiveLibrary()
 
   const [tab, setTab] = useState<Tab>('wiring')
   const [slackMm, setSlackMm] = useState(50)
@@ -375,7 +373,7 @@ export function ReportsModal() {
           {converted && (
             <span className="text-accent font-medium">
               ≈ {formatMoney({ amount: converted.amount, currency: targetCurrency })}
-              <span className="ml-1 text-[10px] text-muted">@ {converted.rate.toFixed(4)}</span>
+              <span className="ml-1 text-[11px] text-muted">@ {converted.rate.toFixed(4)}</span>
             </span>
           )}
         </div>

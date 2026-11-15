@@ -42,6 +42,9 @@ interface UiState {
   calculatorOpen: boolean
   docsOpen: boolean
 
+  /** Bumped to ask the assembly canvas to fit its contents (e.g. after open). */
+  fitViewRequest: number
+
   // reconciliation
   showReconciliation: boolean
   reconciliationItems: { parts: Part[]; templates: PinoutTemplate[] }
@@ -70,6 +73,7 @@ interface UiState {
   toggleCalculator: () => void
   toggleDocs: () => void
 
+  requestFitView: () => void
   setReconciliation: (items: { parts: Part[]; templates: PinoutTemplate[] }) => void
   dismissReconciliation: () => void
 }
@@ -95,6 +99,7 @@ export const useUiStore = create<UiState>((set) => ({
   calculatorOpen: false,
   docsOpen: false,
 
+  fitViewRequest: 0,
   showReconciliation: false,
   reconciliationItems: { parts: [], templates: [] },
 
@@ -133,6 +138,7 @@ export const useUiStore = create<UiState>((set) => ({
 
   toggleDocs: () => set((st) => ({ docsOpen: !st.docsOpen })),
 
+  requestFitView: () => set((st) => ({ fitViewRequest: st.fitViewRequest + 1 })),
   setReconciliation: (items) =>
     set({ showReconciliation: true, reconciliationItems: items }),
   dismissReconciliation: () =>

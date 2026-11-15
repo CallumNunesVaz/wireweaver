@@ -85,9 +85,9 @@ export function RevisionsPanel() {
               <span className="flex items-center gap-1.5 font-medium">
                 <History size={12} /> {r.label}
               </span>
-              <span className="text-[10px] text-muted">{formatTime(r.timestamp)}</span>
+              <span className="text-[11px] text-muted">{formatTime(r.timestamp)}</span>
               {r.description && (
-                <span className="text-[10px] text-muted">{r.description}</span>
+                <span className="text-[11px] text-muted">{r.description}</span>
               )}
             </button>
           ))}
@@ -105,7 +105,7 @@ export function RevisionsPanel() {
                   <GitCompare size={13} /> Changes since “{selected.label}”
                 </span>
                 <button
-                  className="ww-btn ml-auto text-[#e5484d]"
+                  className="ww-btn ml-auto text-danger"
                   onClick={restore}
                   title="Restore this revision"
                 >

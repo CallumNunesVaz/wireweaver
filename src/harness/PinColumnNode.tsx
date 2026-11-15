@@ -30,7 +30,7 @@ function PinColumnNodeImpl({ data }: NodeProps) {
     <div className="w-56 rounded border border-edge bg-panelalt">
       <div className="border-b border-edge px-3 py-1.5">
         <div className="text-[11px] font-semibold leading-tight">{d.title}</div>
-        <div className="text-[9px] text-muted leading-tight">
+        <div className="text-[11px] text-muted leading-tight">
           {d.connectorName}
           {d.matingConnectorName && <span> ← {d.matingConnectorName}</span>}
           <span className="ml-1">
@@ -54,10 +54,10 @@ function PinColumnNodeImpl({ data }: NodeProps) {
               style={{ justifyContent: d.end === 'a' ? 'flex-start' : 'flex-end' }}
             >
               {d.end !== 'a' && (
-                <span className="text-[10px] text-muted truncate max-w-[72px]">{pin.signal || '—'}</span>
+                <span className="text-[11px] text-muted truncate max-w-[72px]">{pin.signal || '—'}</span>
               )}
               <span
-                className="flex h-4 min-w-[18px] items-center justify-center rounded-sm px-1 text-[9px] font-semibold text-white"
+                className="flex h-4 min-w-[18px] items-center justify-center rounded-sm px-1 text-[11px] font-semibold text-white"
                 style={{
                   background: signalColor(pin.signalClass),
                   opacity: wired ? 1 : 0.45,
@@ -68,14 +68,14 @@ function PinColumnNodeImpl({ data }: NodeProps) {
                 {pin.position}
               </span>
               {d.end === 'a' && (
-                <span className="text-[10px] text-muted truncate max-w-[72px]">{pin.signal || '—'}</span>
+                <span className="text-[11px] text-muted truncate max-w-[72px]">{pin.signal || '—'}</span>
               )}
               <Handle
                 id={`${d.end}:${pin.position}`}
                 type="source"
                 position={side}
                 isConnectableStart
-                style={{ [handleSide]: -6, top: '50%', width: 10, height: 10, background: signalColor(pin.signalClass), border: '1px solid #14161b' }}
+                style={{ [handleSide]: -6, top: '50%', width: 10, height: 10, background: signalColor(pin.signalClass), border: '1px solid var(--color-handle-ring)' }}
               />
               <Handle
                 id={`${d.end}:${pin.position}-tgt`}

@@ -2,6 +2,7 @@
  * Manufacturing documentation derived from a project: wiring tables (from–to
  * lists), cutlists and netlists, plus CSV serializers for each.
  */
+import { csvCell } from './csv'
 import type { Harness, HarnessWire, Project } from './types'
 import { isWire } from './types'
 import type { LibraryLike, ResolvedEndpoint } from './derivation'
@@ -240,10 +241,7 @@ export function netlist(lib: LibraryLike, project: Project): Net[] {
 
 // ---------- CSV ----------
 
-function esc(v: string | number): string {
-  const s = String(v)
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-}
+const esc = csvCell
 
 export function wiringCsv(rows: WiringRow[]): string {
   const header = [

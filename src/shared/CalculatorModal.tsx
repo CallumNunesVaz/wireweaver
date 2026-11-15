@@ -81,33 +81,33 @@ export function CalculatorModal({ onClose }: { onClose: () => void }) {
 
       <div className="mt-4 grid grid-cols-2 gap-2">
         <div className="rounded border border-edge bg-panelalt px-3 py-2">
-          <div className="text-[10px] uppercase text-muted">Loop Resistance</div>
+          <div className="text-[11px] uppercase text-muted">Loop Resistance</div>
           <div className="text-sm font-semibold">{results.resistance.toFixed(4)} Ω</div>
         </div>
         <div className="rounded border border-edge bg-panelalt px-3 py-2">
-          <div className="text-[10px] uppercase text-muted">Voltage Drop</div>
+          <div className="text-[11px] uppercase text-muted">Voltage Drop</div>
           <div className="text-sm font-semibold">{results.vDrop.toFixed(3)} V</div>
-          <div className="text-[10px] text-muted">{results.pct.toFixed(2)}%</div>
+          <div className="text-[11px] text-muted">{results.pct.toFixed(2)}%</div>
         </div>
         <div className="rounded border border-edge bg-panelalt px-3 py-2">
-          <div className="text-[10px] uppercase text-muted">Power Loss</div>
+          <div className="text-[11px] uppercase text-muted">Power Loss</div>
           <div className="text-sm font-semibold">{results.pLoss.toFixed(3)} W</div>
         </div>
         <div className="rounded border border-edge bg-panelalt px-3 py-2">
-          <div className="text-[10px] uppercase text-muted">Chassis Ampacity</div>
+          <div className="text-[11px] uppercase text-muted">Chassis Ampacity</div>
           <div className="text-sm font-semibold">{results.ampacity.toFixed(2)} A</div>
-          <div className="text-[10px] text-muted">{results.mm2.toFixed(3)} mm²</div>
+          <div className="text-[11px] text-muted">{results.mm2.toFixed(3)} mm²</div>
         </div>
       </div>
 
       {overAmpacity && (
-        <div className="mt-3 flex items-start gap-2 rounded border border-[#e5484d]/40 bg-[#e5484d]/10 px-3 py-2 text-[11px] text-[#e5484d]">
+        <div className="mt-3 flex items-start gap-2 rounded border border-danger/40 bg-danger/10 px-3 py-2 text-[11px] text-danger">
           <AlertTriangle size={14} className="mt-0.5 shrink-0" />
           Current exceeds the {awg} AWG chassis-wiring ampacity ({results.ampacity.toFixed(2)} A).
         </div>
       )}
       {!overAmpacity && results.pct > 3 && (
-        <div className="mt-3 flex items-start gap-2 rounded border border-[#c48a2f]/40 bg-[#c48a2f]/10 px-3 py-2 text-[11px] text-[#e0b25c]">
+        <div className="mt-3 flex items-start gap-2 rounded border border-warn/40 bg-warn/10 px-3 py-2 text-[11px] text-warn">
           <AlertTriangle size={14} className="mt-0.5 shrink-0" />
           Voltage drop exceeds 3% — consider a heavier gauge.
         </div>

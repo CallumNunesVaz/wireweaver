@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Search, CornerDownLeft } from 'lucide-react'
 import { useUiStore } from '../stores/uiStore'
+import { useFocusTrap, useOverlay } from './overlay'
 
 export interface Command {
   id: string
@@ -26,16 +27,9 @@ export function CommandPalette({ commands }: { commands: Command[] }) {
 
   useEffect(() => setIndex(0), [query])
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
-      e.preventDefault()
-      e.stopImmediatePropagation()
-      close()
-    }
-    window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
-  }, [close])
+  const z = useOverlay(close, { kind: 'modal' })
+  const panelRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(panelRef)
 
   useEffect(() => {
     const el = listRef.current?.querySelector<HTMLElement>('[data-active="true"]')
@@ -50,18 +44,29 @@ export function CommandPalette({ commands }: { commands: Command[] }) {
 
   return (
     <div
-      className="fixed inset-0 z-[65] flex items-start justify-center bg-black/50 pt-[12vh]"
-      onMouseDown={close}
+      className="fixed inset-0 flex items-start justify-center bg-black/50 pt-[12vh]"
+      style={{ zIndex: z }}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) close()
+      }}
     >
       <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
         className="w-full max-w-lg overflow-hidden rounded-lg border border-edge bg-panel shadow-2xl"
-        onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 border-b border-edge px-3 py-2">
           <Search size={15} className="text-muted" />
           <input
             className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
             placeholder="Type a command…"
+            aria-label="Search commands"
+            role="combobox"
+            aria-expanded="true"
+            aria-controls="ww-palette-list"
+            aria-activedescendant={filtered[index] ? `ww-cmd-${filtered[index].id}` : undefined}
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -78,15 +83,19 @@ export function CommandPalette({ commands }: { commands: Command[] }) {
               }
             }}
           />
-          <span className="text-[10px] text-muted">Esc</span>
+          <span className="text-[11px] text-muted">Esc</span>
         </div>
-        <div ref={listRef} className="max-h-80 overflow-y-auto py-1">
+        <div ref={listRef} id="ww-palette-list" role="listbox" className="max-h-80 overflow-y-auto py-1">
           {filtered.length === 0 && (
             <div className="px-3 py-4 text-center text-xs text-muted">No matching commands.</div>
           )}
           {filtered.map((c, i) => (
             <button
               key={c.id}
+              id={`ww-cmd-${c.id}`}
+              role="option"
+              aria-selected={i === index}
+              tabIndex={-1}
               data-active={i === index}
               className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs ${
                 i === index ? 'bg-accent/15 text-accent' : 'hover:bg-panelalt'
@@ -95,7 +104,7 @@ export function CommandPalette({ commands }: { commands: Command[] }) {
               onClick={() => run(c)}
             >
               <span className="flex-1 truncate">{c.label}</span>
-              {c.hint && <span className="text-[10px] text-muted">{c.hint}</span>}
+              {c.hint && <span className="max-w-[45%] truncate text-[11px] text-muted">{c.hint}</span>}
               {i === index && <CornerDownLeft size={12} className="text-muted" />}
             </button>
           ))}

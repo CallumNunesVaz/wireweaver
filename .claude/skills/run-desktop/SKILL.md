@@ -31,11 +31,11 @@ import { launch, helpers, closeApp, sleep } from '<repo>/.claude/skills/run-desk
 const { app, page } = await launch({
   recent: [{ name: 'My Test', path: '/abs/path/to/test-project.wwv' }]
 })
-const h = helpers(page)
+const h = helpers(page, app)   // pass app: screenshots via Electron capturePage
 
-await h.clickTitle('Recent projects')   // header buttons all have title=
+await h.clickTitle('Project actions')   // header buttons all have title=
 await sleep(400)
-await h.clickText('My Test')            // open project WITHOUT a native dialog
+await h.clickText('Recent: My Test')    // open project WITHOUT a native dialog
 await sleep(2000)
 await h.ss('loaded')
 // ... drive, screenshot, verify ...
@@ -90,11 +90,22 @@ merged into the sandboxed library on open).
 6. **Rebuild before driving** (`npm run build`) — the driver runs the built
    `out/`, not the Vite dev server, so stale builds test stale code.
 
+7. **Screenshots: always `helpers(page, app)`.** On Electron 45 Playwright's
+   `page.screenshot()` works once and then times out; with `app` the helper
+   uses Electron's `webContents.capturePage()` instead.
+8. **Recent projects live in `<userData>/recent-projects.json`** (not the
+   library folder); `launch({ recent })` seeds that file. The main process only
+   opens project paths it has granted (dialog, Recent, OS), so seeding Recent
+   is also what makes a path openable.
+9. **Overlays:** every dialog/menu/popup registers with one overlay stack;
+   Escape closes only the top one. Dialogs have `role="dialog"` and an
+   accessible name — assert on those rather than on body text.
+
 ## Verifying state
 
 Prefer reading the UI over trusting clicks: `h.text('.fixed table')` for modal
 tables (Reports), `h.edgeIds()` to detect created wires/harness segments,
 `document.querySelectorAll('.react-flow__edge-twisted').length` for
-twisted-pair rendering, DRC badge via
-`[title="Design rule check"]` textContent. Screenshot everything; a blank or
+twisted-pair rendering, DRC badge via the button whose `title` starts with
+`Design rule check:`. Screenshot everything; a blank or
 wrong frame is a failed step even when the click reported OK.

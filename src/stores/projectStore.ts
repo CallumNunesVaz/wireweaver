@@ -16,6 +16,8 @@ import {
   suggestHarnessNames
 } from '../model/derivation'
 import { createRevision, restoreRevision as restoreRevisionFn } from '../model/revisions'
+import { parseProjectFile } from '../model/project-file'
+import { nextSpliceName } from '../model/wiring'
 
 
 interface ProjectState {
@@ -30,6 +32,8 @@ interface ProjectState {
   updateInstancePositions: (updates: { id: string; position: { x: number; y: number } }[]) => void
   setInstanceLabel: (id: string, label: string) => void
   removeInstance: (id: string) => void
+  /** Remove several instances (and prune their harness endpoints) as one undo step. */
+  removeInstances: (ids: string[]) => void
   duplicateInstance: (id: string) => void
 
   // harnesses
@@ -54,6 +58,7 @@ interface ProjectState {
   addSplice: (harnessId: string, wireIds: string[]) => void
   removeSplice: (harnessId: string, spliceId: string) => void
   assignSpliceWire: (harnessId: string, spliceId: string, wirePartId: string) => void
+  moveSplice: (harnessId: string, spliceId: string, position: { x: number; y: number }) => void
 
   // revisions
   addRevision: (label: string, description?: string) => void
@@ -63,7 +68,8 @@ interface ProjectState {
   setProjectMeta: (
     patch: Partial<Pick<Project, 'name' | 'revision' | 'author' | 'description'>>
   ) => void
-  loadProject: (project: Project, filePath?: string) => void
+  /** Load parsed `.wwv` JSON; throws FileFormatError when it is not valid. */
+  loadProject: (data: unknown, filePath?: string) => void
   newProject: () => void
   markSaved: (filePath?: string) => void
   markDirty: () => void
@@ -78,37 +84,6 @@ function emptyProject(): Project {
     partSnapshots: {},
     templateSnapshots: {},
     revisions: []
-  }
-}
-
-function ensureHarness(h: Harness): Harness {
-  const maybeOld = h as unknown as { a?: HarnessEndpoint; b?: HarnessEndpoint; lengthMm?: number; description?: string; notes?: string }
-  if (!h.endpoints && maybeOld.a && maybeOld.b) {
-    return {
-      id: h.id,
-      name: h.name,
-      endpoints: [maybeOld.a!, maybeOld.b!],
-      wires: h.wires ?? [],
-      segments: maybeOld.lengthMm != null
-        ? [{ fromEnd: 'a', toEnd: 'b', lengthMm: maybeOld.lengthMm }]
-        : [],
-      description: maybeOld.description,
-      notes: maybeOld.notes,
-      accessories: (h as any).accessories ?? [],
-      splices: (h as any).splices ?? []
-    }
-  }
-  return {
-    id: h.id,
-    name: h.name,
-    endpoints: h.endpoints ?? [],
-    wires: h.wires ?? [],
-    segments: h.segments ?? [],
-    layout: h.layout,
-    description: h.description,
-    notes: h.notes,
-    accessories: h.accessories ?? [],
-    splices: h.splices ?? []
   }
 }
 
@@ -191,18 +166,28 @@ export const useProjectStore = create<ProjectState>()(
         )
       },
 
-      removeInstance: (id) => {
+      removeInstance: (id) => get().removeInstances([id]),
+
+      removeInstances: (ids) => {
         flushCoalesce()
-        set((s) => ({
-          project: {
-            ...s.project,
-            deviceInstances: s.project.deviceInstances.filter((d) => d.id !== id),
-            harnesses: s.project.harnesses
+        if (ids.length === 0) return
+        const gone = new Set(ids)
+        set((s) => {
+          let harnesses = s.project.harnesses
+          for (const id of ids) {
+            harnesses = harnesses
               .map((h) => pruneInstanceFromHarness(h, id))
               .filter((h): h is Harness => h !== null)
-          },
-          dirty: true
-        }))
+          }
+          return {
+            project: {
+              ...s.project,
+              deviceInstances: s.project.deviceInstances.filter((d) => !gone.has(d.id)),
+              harnesses
+            },
+            dirty: true
+          }
+        })
       },
 
       duplicateInstance: (id) => {
@@ -396,6 +381,7 @@ export const useProjectStore = create<ProjectState>()(
       },
 
       removeHarnessAccessory: (harnessId, accId) => {
+        flushCoalesce()
         set((s) => ({
           project: {
             ...s.project,
@@ -411,7 +397,8 @@ export const useProjectStore = create<ProjectState>()(
 
       addSplice: (harnessId, wireIds) => {
         flushCoalesce()
-        const splice: HarnessSplice = { id: nanoid(), name: `Splice ${nanoid().slice(0, 6)}`, wireIds }
+        const h = get().project.harnesses.find((x) => x.id === harnessId)
+        const splice: HarnessSplice = { id: nanoid(), name: nextSpliceName(h?.splices), wireIds }
         set((s) => ({
           project: {
             ...s.project,
@@ -426,6 +413,7 @@ export const useProjectStore = create<ProjectState>()(
       },
 
       removeSplice: (harnessId, spliceId) => {
+        flushCoalesce()
         set((s) => ({
           project: {
             ...s.project,
@@ -439,7 +427,28 @@ export const useProjectStore = create<ProjectState>()(
         }))
       },
 
+      moveSplice: (harnessId, spliceId, position) => {
+        flushCoalesce()
+        set((s) => ({
+          project: {
+            ...s.project,
+            harnesses: s.project.harnesses.map((h) =>
+              h.id === harnessId
+                ? {
+                    ...h,
+                    splices: (h.splices ?? []).map((sp) =>
+                      sp.id === spliceId ? { ...sp, position } : sp
+                    )
+                  }
+                : h
+            )
+          },
+          dirty: true
+        }))
+      },
+
       assignSpliceWire: (harnessId, spliceId, wirePartId) => {
+        flushCoalesce()
         set((s) => ({
           project: {
             ...s.project,
@@ -482,17 +491,10 @@ export const useProjectStore = create<ProjectState>()(
         )
       },
 
-      loadProject: (project, filePath) => {
+      loadProject: (data, filePath) => {
+        const project = parseProjectFile(data)
         flushCoalesce()
-        set({
-          project: {
-            ...project,
-            harnesses: project.harnesses.map(ensureHarness),
-            revisions: project.revisions ?? []
-          },
-          filePath,
-          dirty: false
-        })
+        set({ project, filePath, dirty: false })
       },
 
       newProject: () => {

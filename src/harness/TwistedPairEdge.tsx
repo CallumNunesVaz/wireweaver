@@ -102,7 +102,7 @@ function TwistedPairEdgeImpl({
   const mateT = d.mateTargetHandle ? handlePoint(tgtNode, d.mateTargetHandle) : null
 
   const edgeStyle = {
-    stroke: (style?.stroke as string) ?? '#5b9bff',
+    stroke: (style?.stroke as string) ?? 'var(--color-accent)',
     strokeWidth: (style?.strokeWidth as number) ?? 2,
     strokeDasharray: style?.strokeDasharray,
     strokeLinejoin: 'round' as const,

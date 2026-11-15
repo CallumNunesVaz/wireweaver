@@ -22,8 +22,8 @@ function StripedWireEdgeImpl({
   style
 }: EdgeProps) {
   const d = data as StripedWireData | undefined
-  const primary = d?.primary ?? '#5b9bff'
-  const secondary = d?.secondary ?? '#c48a2f'
+  const primary = d?.primary ?? 'var(--color-accent)'
+  const secondary = d?.secondary ?? 'var(--color-warn)'
   const glow = selected && style?.filter ? { filter: String(style.filter) } : {}
 
   const [path] = getBezierPath({

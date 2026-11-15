@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect } from 'react'
 import {
   AlertTriangle,
   CircleAlert,
@@ -8,10 +8,9 @@ import {
   X,
   ShieldCheck
 } from 'lucide-react'
-import { useLibraryStore, selectLibraryLike } from '../stores/libraryStore'
 import { useProjectStore } from '../stores/projectStore'
 import { useUiStore } from '../stores/uiStore'
-import { runDrc } from '../model/drc'
+import { useDrcIssues } from '../stores/effectiveLibrary'
 
 /**
  * Persistent design-rule-check side panel. Unlike a modal it stays open while
@@ -24,10 +23,7 @@ export function DrcPanel() {
   const index = useUiStore((s) => s.drcIndex)
   const setIndex = useUiStore((s) => s.setDrcIndex)
   const project = useProjectStore((s) => s.project)
-  const parts = useLibraryStore((s) => s.parts)
-  const templates = useLibraryStore((s) => s.templates)
-  const lib = useMemo(() => selectLibraryLike({ parts, templates }), [parts, templates])
-  const issues = useMemo(() => runDrc(lib, project), [lib, project])
+  const issues = useDrcIssues()
 
   const errors = issues.filter((i) => i.severity === 'error').length
   const current = issues[Math.min(index, Math.max(0, issues.length - 1))]
@@ -46,21 +42,21 @@ export function DrcPanel() {
   }
 
   return (
-    <aside className="flex w-80 shrink-0 flex-col border-l border-edge bg-panel">
+    <aside className="flex w-80 shrink-0 flex-col border-l border-edge bg-panel" aria-label="Design rule check">
       <div className="flex items-center gap-2 border-b border-edge px-3 py-2">
         <ShieldCheck size={15} className="text-accent" />
         <span className="text-xs font-semibold uppercase tracking-wide">Design Rule Check</span>
-        <button className="ml-auto text-muted hover:text-ink" onClick={close} title="Close">
+        <button className="ww-icon-btn ml-auto" onClick={close} title="Close" aria-label="Close design rule check">
           <X size={16} />
         </button>
       </div>
 
       <div className="flex items-center gap-2 border-b border-edge px-3 py-1.5 text-[11px]">
-        <span className={errors > 0 ? 'text-red-400' : 'text-muted'}>
+        <span className={errors > 0 ? 'text-danger' : 'text-muted'}>
           {errors} error{errors === 1 ? '' : 's'}
         </span>
         <span className="text-muted">·</span>
-        <span className="text-amber-400">
+        <span className="text-warn">
           {issues.length - errors} warning{issues.length - errors === 1 ? '' : 's'}
         </span>
         <div className="ml-auto flex items-center gap-1">
@@ -69,6 +65,7 @@ export function DrcPanel() {
             onClick={() => go(-1)}
             disabled={issues.length === 0}
             title="Previous issue"
+            aria-label="Previous issue"
           >
             <ChevronUp size={13} />
           </button>
@@ -80,6 +77,7 @@ export function DrcPanel() {
             onClick={() => go(1)}
             disabled={issues.length === 0}
             title="Next issue"
+            aria-label="Next issue"
           >
             <ChevronDown size={13} />
           </button>
@@ -89,7 +87,7 @@ export function DrcPanel() {
       <div className="min-h-0 flex-1 overflow-y-auto p-1">
         {issues.length === 0 ? (
           <div className="flex items-center gap-2 p-3 text-sm text-muted">
-            <CircleCheck size={16} className="text-green-500" />
+            <CircleCheck size={16} className="text-success" />
             No issues found.
           </div>
         ) : (
@@ -107,9 +105,9 @@ export function DrcPanel() {
                   title={issue.target ? 'Select in the assembly view' : undefined}
                 >
                   {issue.severity === 'error' ? (
-                    <CircleAlert size={14} className="mt-0.5 shrink-0 text-red-400" />
+                    <CircleAlert size={14} className="mt-0.5 shrink-0 text-danger" />
                   ) : (
-                    <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-400" />
+                    <AlertTriangle size={14} className="mt-0.5 shrink-0 text-warn" />
                   )}
                   <span>{issue.message}</span>
                 </button>
@@ -120,10 +118,14 @@ export function DrcPanel() {
       </div>
 
       {current && (
-        <div className="border-t border-edge px-3 py-2 text-[10px] text-muted">
+        <div className="border-t border-edge px-3 py-2 text-[11px] text-muted">
           {current.target
-            ? `Target: ${current.target.type} ${current.target.id.slice(0, 8)}…`
-            : 'No target for this issue.'}
+            ? `Applies to ${current.target.type === 'instance' ? 'device' : 'harness'} "${
+                current.target.type === 'instance'
+                  ? project.deviceInstances.find((d) => d.id === current.target!.id)?.label ?? '?'
+                  : project.harnesses.find((h) => h.id === current.target!.id)?.name ?? '?'
+              }" — click the issue to select it.`
+            : 'This issue applies to the whole project.'}
         </div>
       )}
     </aside>

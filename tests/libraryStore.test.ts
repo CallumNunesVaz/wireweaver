@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { useLibraryStore, selectLibraryLike } from '../src/stores/libraryStore'
+import { useLibraryStore, selectLibraryLike, flushLibraryWrites } from '../src/stores/libraryStore'
 import type { Part, PinoutTemplate } from '../src/model/types'
 
 const wire: Part = {
@@ -34,13 +34,14 @@ beforeEach(() => {
     ww,
     addEventListener: vi.fn()
   }
-  useLibraryStore.setState({ parts: [], templates: [], libraryPath: '', loaded: false })
+  useLibraryStore.setState({ parts: [], templates: [], libraryPath: '', loaded: false, loadError: null })
 })
 
 describe('libraryStore', () => {
   it('seeds a new empty library on first load', async () => {
     ww.library.load.mockResolvedValue({ parts: [], templates: [], isNew: true })
     await useLibraryStore.getState().load()
+    await flushLibraryWrites()
     const st = useLibraryStore.getState()
     expect(st.loaded).toBe(true)
     expect(st.parts.length).toBeGreaterThan(0)
@@ -111,5 +112,29 @@ describe('libraryStore', () => {
     expect(like.parts.w1).toEqual(wire)
     expect(like.templates.t1).toEqual(tpl)
     expect(selectLibraryLike({ parts: [], templates: [] })).toEqual({ parts: {}, templates: {} })
+  })
+
+  it('does not seed or write when the library file is unreadable', async () => {
+    ww.library.load.mockResolvedValue({ parts: [], templates: [], isNew: false, error: 'parts.json: bad JSON' })
+    await useLibraryStore.getState().load()
+    expect(useLibraryStore.getState().loadError).toContain('bad JSON')
+    expect(useLibraryStore.getState().parts).toEqual([])
+    useLibraryStore.getState().upsertPart(wire)
+    await flushLibraryWrites()
+    expect(ww.library.saveParts).not.toHaveBeenCalled()
+    useLibraryStore.getState().acceptEmptyLibrary()
+    useLibraryStore.getState().upsertPart(wire)
+    await flushLibraryWrites()
+    expect(ww.library.saveParts).toHaveBeenCalledOnce()
+  })
+
+  it('mergeItems adds only new, well-formed items', () => {
+    useLibraryStore.setState({ parts: [wire], templates: [] })
+    const r = useLibraryStore.getState().mergeItems({
+      parts: [wire, { ...wire, id: 'w2', name: 'Other' }, { bogus: true }],
+      templates: [tpl, tpl]
+    })
+    expect(r).toEqual({ addedParts: 1, addedTemplates: 1, skippedParts: 2, skippedTemplates: 1 })
+    expect(useLibraryStore.getState().parts.map((p) => p.id)).toEqual([wire.id, 'w2'])
   })
 })

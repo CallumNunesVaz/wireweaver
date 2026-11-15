@@ -83,17 +83,18 @@ describe('exportBomCsv', () => {
 
   it('delegates to the bridge and returns its result', async () => {
     const exportMock = vi.fn().mockResolvedValue({ canceled: false, path: '/tmp/bom.csv' })
-    vi.stubGlobal('window', { ww: { bom: { export: exportMock } } })
+    vi.stubGlobal('window', { ww: { file: { exportText: exportMock } } })
     const res = await exportBomCsv(project, lib)
     expect(exportMock).toHaveBeenCalledOnce()
+    expect(exportMock.mock.calls[0][0]).toMatchObject({ filterName: 'CSV', extensions: ['csv'] })
     expect(res.path).toBe('/tmp/bom.csv')
   })
 
   it('reports errors from the bridge', async () => {
     vi.stubGlobal('window', {
       ww: {
-        bom: {
-          export: vi.fn().mockRejectedValue(new Error('disk full'))
+        file: {
+          exportText: vi.fn().mockRejectedValue(new Error('disk full'))
         }
       }
     })

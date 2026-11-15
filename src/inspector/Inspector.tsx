@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
-import { Pencil, Trash2, Copy, Cable, Cpu, AlertTriangle, Plus, X, Boxes } from 'lucide-react'
-import { useLibraryStore, selectLibraryLike } from '../stores/libraryStore'
+import { Pencil, Trash2, Copy, Cable, Cpu, AlertTriangle, Plus, Boxes, Info } from 'lucide-react'
+import { useLibraryStore } from '../stores/libraryStore'
+import { useEffectiveLibrary } from '../stores/effectiveLibrary'
+import { Modal } from '../shared/Modal'
 import { useProjectStore } from '../stores/projectStore'
 import { useUiStore } from '../stores/uiStore'
 import { resolveEndpoint, validateHarness } from '../model/derivation'
@@ -20,17 +22,43 @@ const ACCESSORY_CATEGORIES: { value: AccessoryCategory; label: string }[] = [
   { value: 'other', label: 'Other' }
 ]
 
+/**
+ * Always mounted so selecting and deselecting doesn't resize the canvas; it
+ * shows project-level guidance when nothing is selected.
+ */
 export function Inspector() {
   const selection = useUiStore((s) => s.selection)
-  if (!selection) return null
   return (
-    <aside className="flex w-72 shrink-0 flex-col border-l border-edge bg-panel">
-      {selection.type === 'instance' ? (
-        <InstanceInspector id={selection.id} />
+    <aside className="flex w-72 shrink-0 flex-col border-l border-edge bg-panel" aria-label="Inspector">
+      {!selection ? (
+        <EmptyInspector />
+      ) : selection.type === 'instance' ? (
+        <InstanceInspector key={selection.id} id={selection.id} />
       ) : (
-        <HarnessInspector id={selection.id} />
+        <HarnessInspector key={selection.id} id={selection.id} />
       )}
     </aside>
+  )
+}
+
+function EmptyInspector() {
+  const devices = useProjectStore((s) => s.project.deviceInstances.length)
+  const harnesses = useProjectStore((s) => s.project.harnesses.length)
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <Header icon={<Info size={14} />} title="Inspector" />
+      <div className="space-y-3 p-3 text-xs text-muted">
+        <div>
+          {devices} device{devices === 1 ? '' : 's'} · {harnesses} harness{harnesses === 1 ? '' : 'es'}
+        </div>
+        <ul className="list-disc space-y-1 pl-4">
+          <li>Drag a device from the library onto the canvas.</li>
+          <li>Drag from one port to another to create a harness.</li>
+          <li>Select a device or harness to see its details here.</li>
+          <li>Double-click a harness to wire it pin by pin.</li>
+        </ul>
+      </div>
+    </div>
   )
 }
 
@@ -50,9 +78,8 @@ function InstanceInspector({ id }: { id: string }) {
   const setLabel = useProjectStore((s) => s.setInstanceLabel)
   const removeInstance = useProjectStore((s) => s.removeInstance)
   const duplicateInstance = useProjectStore((s) => s.duplicateInstance)
-  const part = useLibraryStore((s) =>
-    instance ? s.parts.find((p) => p.id === instance.partId) : undefined
-  )
+  const { lib: effLib, snapshotOnly } = useEffectiveLibrary()
+  const part = instance ? effLib.parts[instance.partId] : undefined
   const openPartEditor = useUiStore((s) => s.openPartEditor)
   const select = useUiStore((s) => s.select)
 
@@ -70,7 +97,13 @@ function InstanceInspector({ id }: { id: string }) {
             onChange={(e) => setLabel(id, e.target.value)}
           />
         </div>
-        <Row k="Part" v={part?.name ?? 'missing'} />
+        <Row k="Part" v={part?.name ?? 'missing from library'} />
+        {part && snapshotOnly.has(part.id) && (
+          <div className="rounded border border-warn/40 bg-warn/10 px-2 py-1 text-[11px] text-warn">
+            This part comes from the project file and isn't in your library. Add it from the
+            prompt shown when the project opened, or via Library Manager › Import.
+          </div>
+        )}
         <Row k="Type" v={part?.type ?? '—'} />
         <Row k="Internal PN" v={part?.internalPartNumber || '—'} />
         <Row k="Cost" v={formatMoney(part?.cost)} />
@@ -95,7 +128,7 @@ function InstanceInspector({ id }: { id: string }) {
         )}
       </div>
       <div className="flex gap-1 border-t border-edge p-2">
-        {part && (
+        {part && !snapshotOnly.has(part.id) && (
           <button
             className="ww-btn flex-1"
             onClick={() => openPartEditor({ kind: part.kind, partId: part.id })}
@@ -103,16 +136,17 @@ function InstanceInspector({ id }: { id: string }) {
             <Pencil size={13} /> Edit part
           </button>
         )}
-        <button className="ww-btn" onClick={() => duplicateInstance(id)} title="Duplicate">
+        <button className="ww-btn" onClick={() => duplicateInstance(id)} title="Duplicate (Ctrl+D)" aria-label="Duplicate device">
           <Copy size={14} />
         </button>
         <button
           className="ww-btn"
           onClick={() => {
-            removeInstance(id)
             select(null)
+            removeInstance(id)
           }}
-          title="Delete"
+          title="Delete device (undo with Ctrl+Z)"
+          aria-label="Delete device"
         >
           <Trash2 size={14} />
         </button>
@@ -128,8 +162,7 @@ function HarnessInspector({ id }: { id: string }) {
   const removeHarness = useProjectStore((s) => s.removeHarness)
   const addAccessory = useProjectStore((s) => s.addHarnessAccessory)
   const removeAccessory = useProjectStore((s) => s.removeHarnessAccessory)
-  const parts = useLibraryStore((s) => s.parts)
-  const templates = useLibraryStore((s) => s.templates)
+  const { lib, parts } = useEffectiveLibrary()
   const upsertPart = useLibraryStore((s) => s.upsertPart)
   const openHarnessEditor = useUiStore((s) => s.openHarnessEditor)
   const select = useUiStore((s) => s.select)
@@ -139,11 +172,6 @@ function HarnessInspector({ id }: { id: string }) {
   const [accPartId, setAccPartId] = useState('')
   const [accQty, setAccQty] = useState(1)
   const [accSearch, setAccSearch] = useState('')
-
-  const lib = useMemo(
-    () => selectLibraryLike({ parts, templates }),
-    [parts, templates]
-  )
 
   const info = useMemo(() => {
     if (!harness) return null
@@ -201,7 +229,7 @@ function HarnessInspector({ id }: { id: string }) {
     toast(`Saved subassembly "${sub.name}" to the library.`, 'success')
   }
 
-  const lookupPart = (partId: string) => parts.find((p) => p.id === partId)
+  const lookupPart = (partId: string) => lib.parts[partId]
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -278,12 +306,13 @@ function HarnessInspector({ id }: { id: string }) {
                   <div key={acc.id} className="flex items-center justify-between rounded border border-edge bg-panelalt px-2 py-1 text-xs">
                     <div className="min-w-0 flex-1">
                       <div className="truncate font-medium">{part?.name ?? 'unknown part'}</div>
-                      <div className="text-[10px] text-muted capitalize">{acc.category} · Qty {acc.quantity}</div>
+                      <div className="text-[11px] text-muted capitalize">{acc.category} · Qty {acc.quantity}</div>
                     </div>
                     <button
-                      className="ml-1 text-muted hover:text-[#e5484d]"
+                      className="ml-1 text-muted hover:text-danger"
                       onClick={() => removeAccessory(id, acc.id)}
                       title="Remove accessory"
+                      aria-label={`Remove ${part?.name ?? 'accessory'}`}
                     >
                       <Trash2 size={12} />
                     </button>
@@ -299,7 +328,7 @@ function HarnessInspector({ id }: { id: string }) {
             {v.warnings.map((w, i) => (
               <div
                 key={i}
-                className="flex items-start gap-1.5 rounded border border-[#c48a2f]/40 bg-[#c48a2f]/10 px-2 py-1 text-[11px] text-[#e0b25c]"
+                className="flex items-start gap-1.5 rounded border border-warn/40 bg-warn/10 px-2 py-1 text-[11px] text-warn"
               >
                 <AlertTriangle size={13} className="mt-0.5 shrink-0" />
                 {w}
@@ -316,98 +345,100 @@ function HarnessInspector({ id }: { id: string }) {
           className="ww-btn"
           onClick={saveAsSubassembly}
           title="Save as reusable subassembly"
+          aria-label="Save as reusable subassembly"
         >
           <Boxes size={14} />
         </button>
         <button
           className="ww-btn"
           onClick={() => {
-            removeHarness(id)
             select(null)
+            removeHarness(id)
           }}
-          title="Delete"
+          title="Delete harness (undo with Ctrl+Z)"
+          aria-label="Delete harness"
         >
           <Trash2 size={14} />
         </button>
       </div>
 
-      {/* Add Accessory Modal */}
       {showAccessoryModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-          onMouseDown={() => setShowAccessoryModal(false)}
-        >
-          <div
-            className="w-full max-w-sm rounded-lg border border-edge bg-panel shadow-2xl"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-edge px-4 py-3">
-              <span className="text-sm font-semibold">Add Accessory</span>
-              <button className="text-muted hover:text-ink" onClick={() => setShowAccessoryModal(false)}>
-                <X size={18} />
-              </button>
-            </div>
-            <div className="space-y-3 p-4">
-              <div>
-                <label className="ww-label">Category</label>
-                <select
-                  className="ww-input"
-                  value={accCategory}
-                  onChange={(e) => setAccCategory(e.target.value as AccessoryCategory)}
-                >
-                  {ACCESSORY_CATEGORIES.map((c) => (
-                    <option key={c.value} value={c.value}>{c.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="ww-label">Part</label>
-                <input
-                  className="ww-input mb-1"
-                  placeholder="Search parts…"
-                  value={accSearch}
-                  onChange={(e) => setAccSearch(e.target.value)}
-                />
-                <div className="max-h-32 space-y-0.5 overflow-y-auto rounded border border-edge">
-                  {filteredPartOptions.slice(0, 20).map((p) => (
-                    <button
-                      key={p.id}
-                      className={`flex w-full items-center gap-2 px-2 py-1 text-left text-xs hover:bg-panelalt ${
-                        accPartId === p.id ? 'bg-accent/20 text-accent' : ''
-                      }`}
-                      onClick={() => setAccPartId(p.id)}
-                    >
-                      <span className="truncate flex-1">{p.name}</span>
-                      <span className="text-[10px] text-muted capitalize">{p.kind}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label className="ww-label">Quantity</label>
-                <input
-                  type="number"
-                  min={1}
-                  className="ww-input"
-                  value={accQty}
-                  onChange={(e) => setAccQty(Math.max(1, Number(e.target.value) || 1))}
-                />
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 border-t border-edge px-4 py-3">
+        <Modal
+          title="Add accessory"
+          onClose={() => setShowAccessoryModal(false)}
+          footer={
+            <>
               <button className="ww-btn" onClick={() => setShowAccessoryModal(false)}>
                 Cancel
               </button>
-              <button
-                className="ww-btn-primary"
-                onClick={handleAddAccessory}
-                disabled={!accPartId}
-              >
+              <button className="ww-btn-primary" onClick={handleAddAccessory} disabled={!accPartId}>
                 Add
               </button>
+            </>
+          }
+        >
+          <div className="space-y-3">
+            <div>
+              <label className="ww-label" htmlFor="ww-acc-cat">
+                Category
+              </label>
+              <select
+                id="ww-acc-cat"
+                className="ww-input"
+                value={accCategory}
+                onChange={(e) => setAccCategory(e.target.value as AccessoryCategory)}
+              >
+                {ACCESSORY_CATEGORIES.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="ww-label" htmlFor="ww-acc-search">
+                Part
+              </label>
+              <input
+                id="ww-acc-search"
+                className="ww-input mb-1"
+                placeholder="Search parts…"
+                value={accSearch}
+                onChange={(e) => setAccSearch(e.target.value)}
+              />
+              <div className="max-h-40 overflow-y-auto rounded border border-edge" role="listbox" aria-label="Parts">
+                {filteredPartOptions.slice(0, 50).map((p) => (
+                  <button
+                    key={p.id}
+                    role="option"
+                    aria-selected={accPartId === p.id}
+                    className={`ww-menu-item ${accPartId === p.id ? 'bg-accent/15 text-accent' : ''}`}
+                    onClick={() => setAccPartId(p.id)}
+                  >
+                    <span className="flex-1 truncate">{p.name}</span>
+                    <span className="text-[11px] capitalize text-muted">{p.kind}</span>
+                  </button>
+                ))}
+                {filteredPartOptions.length === 0 && (
+                  <div className="px-2 py-2 text-[11px] text-muted">No matching parts.</div>
+                )}
+              </div>
+            </div>
+            <div>
+              <label className="ww-label" htmlFor="ww-acc-qty">
+                Quantity
+              </label>
+              <input
+                id="ww-acc-qty"
+                type="number"
+                min={1}
+                className="ww-input"
+                value={accQty}
+                onChange={(e) => setAccQty(Math.max(1, Number(e.target.value) || 1))}
+              />
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   )
@@ -426,7 +457,7 @@ function EndpointCard({
 }) {
   return (
     <div className="rounded border border-edge bg-panelalt px-2 py-1.5">
-      <div className="text-[10px] uppercase tracking-wide text-muted">{label}</div>
+      <div className="text-[11px] uppercase tracking-wide text-muted">{label}</div>
       <div className="truncate text-xs font-medium">{title}</div>
       <div className="truncate text-[11px] text-muted">
         {connector ? `Connector: ${connector}` : 'No connector (template incomplete)'}

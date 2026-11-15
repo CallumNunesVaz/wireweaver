@@ -1,5 +1,7 @@
-import { useEffect, type ReactNode } from 'react'
+import { useCallback, useRef, type ReactNode } from 'react'
 import { X } from 'lucide-react'
+import { useFocusTrap, useOverlay, useStableId } from './overlay'
+import { confirmDialog } from './dialogs'
 
 interface ModalProps {
   title: string
@@ -7,31 +9,63 @@ interface ModalProps {
   children: ReactNode
   footer?: ReactNode
   wide?: boolean
+  /**
+   * When true, closing without saving (Escape, backdrop, ✕, or a footer
+   * button that calls the `requestClose` passed to `footer`) asks first.
+   */
+  dirty?: boolean
 }
 
-export function Modal({ title, onClose, children, footer, wide }: ModalProps) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+/** Ask before discarding unsaved edits; resolves true when it is OK to close. */
+export async function confirmDiscardEdits(): Promise<boolean> {
+  return confirmDialog({
+    title: 'Discard changes?',
+    message: 'You have unsaved edits in this dialog.',
+    confirmLabel: 'Discard',
+    cancelLabel: 'Keep editing',
+    danger: true
+  })
+}
+
+export function Modal({ title, onClose, children, footer, wide, dirty }: ModalProps) {
+  const requestClose = useCallback(async () => {
+    if (dirty && !(await confirmDiscardEdits())) return
+    onClose()
+  }, [dirty, onClose])
+
+  const z = useOverlay(requestClose, { kind: 'modal' })
+  const panelRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(panelRef)
+  const titleId = useStableId('modal-title')
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/50"
-      onMouseDown={onClose}
+      className="fixed inset-0 flex items-center justify-center bg-black/50 p-4"
+      style={{ zIndex: z }}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) void requestClose()
+      }}
     >
       <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
         className={`flex max-h-[88vh] w-full ${
           wide ? 'max-w-4xl' : 'max-w-lg'
-        } flex-col overflow-hidden rounded-lg border border-edge bg-panel shadow-2xl`}
-        onMouseDown={(e) => e.stopPropagation()}
+        } flex-col overflow-hidden rounded-lg border border-edge bg-panel shadow-2xl outline-none`}
       >
         <div className="flex items-center justify-between border-b border-edge px-4 py-3">
-          <h2 className="text-sm font-semibold">{title}</h2>
-          <button className="text-muted hover:text-ink" onClick={onClose}>
+          <h2 id={titleId} className="text-sm font-semibold">
+            {title}
+          </h2>
+          <button
+            className="ww-icon-btn"
+            onClick={() => void requestClose()}
+            aria-label="Close"
+            title="Close (Esc)"
+          >
             <X size={18} />
           </button>
         </div>

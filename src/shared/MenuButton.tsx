@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { ChevronDown } from 'lucide-react'
+import { useOverlay } from './overlay'
+import { useMenuKeyboard } from './ContextMenu'
 
 export interface MenuAction {
   label: string
@@ -31,15 +33,8 @@ export function MenuButton({
     const onDown = (e: MouseEvent) => {
       if (!ref.current?.contains(e.target as Node)) setOpen(false)
     }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
-    }
     document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
+    return () => document.removeEventListener('mousedown', onDown)
   }, [open])
 
   return (
@@ -47,36 +42,63 @@ export function MenuButton({
       <button
         className={`ww-btn ${open ? 'border-accent' : ''}`}
         onClick={() => setOpen((o) => !o)}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowDown' && !open) {
+            e.preventDefault()
+            setOpen(true)
+          }
+        }}
         title={title}
+        aria-haspopup="menu"
+        aria-expanded={open}
       >
         {icon}
         {label}
-        <ChevronDown size={12} className="text-muted" />
+        <ChevronDown size={12} className="text-muted" aria-hidden />
       </button>
-      {open && (
-        <div
-          className={`absolute top-full z-50 mt-1 min-w-[220px] rounded border border-edge bg-panel py-1 shadow-xl ${
-            align === 'right' ? 'right-0' : 'left-0'
-          }`}
+      {open && <MenuList items={items} align={align} onClose={() => setOpen(false)} label={label ?? title} />}
+    </div>
+  )
+}
+
+function MenuList({
+  items,
+  align,
+  onClose,
+  label
+}: {
+  items: MenuAction[]
+  align: 'left' | 'right'
+  onClose: () => void
+  label?: string
+}) {
+  const close = useCallback(onClose, [onClose])
+  const z = useOverlay(close, { kind: 'popup' })
+  const ref = useRef<HTMLDivElement>(null)
+  useMenuKeyboard(ref)
+  return (
+    <div
+      ref={ref}
+      role="menu"
+      aria-label={label}
+      className={`ww-menu absolute top-full mt-1 min-w-[220px] ${align === 'right' ? 'right-0' : 'left-0'}`}
+      style={{ zIndex: z }}
+    >
+      {items.map((it, i) => (
+        <button
+          key={i}
+          role="menuitem"
+          disabled={it.disabled}
+          className={`ww-menu-item ${it.danger ? 'text-danger' : ''}`}
+          onClick={() => {
+            onClose()
+            it.onClick()
+          }}
         >
-          {items.map((it, i) => (
-            <button
-              key={i}
-              disabled={it.disabled}
-              className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-panelalt disabled:cursor-not-allowed disabled:opacity-40 ${
-                it.danger ? 'text-[#e5484d]' : ''
-              }`}
-              onClick={() => {
-                setOpen(false)
-                it.onClick()
-              }}
-            >
-              {it.icon}
-              <span className="flex-1 truncate">{it.label}</span>
-            </button>
-          ))}
-        </div>
-      )}
+          {it.icon}
+          <span className="flex-1 truncate">{it.label}</span>
+        </button>
+      ))}
     </div>
   )
 }

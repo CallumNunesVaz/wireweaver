@@ -191,6 +191,8 @@ export interface ProjectRevision {
 }
 
 export interface Project {
+  /** On-disk format version; see model/project-file.ts. */
+  schemaVersion?: number
   id: string
   name: string
   deviceInstances: DeviceInstance[]
