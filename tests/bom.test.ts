@@ -78,6 +78,95 @@ describe('bomTotals / toCsv', () => {
   })
 })
 
+describe('toCsv with currency conversion', () => {
+  const rates: Record<string, number> = { EUR: 1, USD: 1.1, GBP: 0.85, JPY: 160 }
+
+  const rows: BomRow[] = [
+    {
+      category: 'device',
+      name: 'A',
+      ipn: '',
+      manufacturer: '',
+      mpn: '',
+      quantity: 2,
+      cost: { amount: 10, currency: 'USD' }
+    },
+    {
+      category: 'wire',
+      name: 'B',
+      ipn: '',
+      manufacturer: '',
+      mpn: '',
+      quantity: 1,
+      cost: { amount: 5, currency: 'EUR' }
+    },
+    {
+      category: 'connector',
+      name: 'C',
+      ipn: '',
+      manufacturer: '',
+      mpn: '',
+      quantity: 3,
+      cost: { amount: 2, currency: 'ZZZ' }
+    },
+    {
+      category: 'wire',
+      name: 'D',
+      ipn: '',
+      manufacturer: '',
+      mpn: '',
+      quantity: 1
+    }
+  ]
+
+  it('adds converted columns and a single converted total', () => {
+    const csv = toCsv(rows, {
+      currency: 'USD',
+      rates,
+      rateDate: '2024-01-02',
+      rateSource: 'Frankfurter'
+    })
+    const header = csv.split('\n')[0]
+    expect(header).toContain('Unit Cost (USD)')
+    expect(header).toContain('Ext Cost (USD)')
+    expect(csv).toContain('10.00,20.00')
+    expect(csv).toContain('5.50,5.50')
+    expect(csv).toContain('Converted total (USD),25.50')
+    expect(csv).toContain('Rates as of,2024-01-02')
+    expect(csv).toContain('Rate source,Frankfurter')
+  })
+
+  it('leaves rows without a rate empty and lists them in the footer', () => {
+    const csv = toCsv(rows, { currency: 'USD', rates })
+    expect(csv).toContain('Not converted: C')
+    expect(csv).not.toContain('Not converted: A')
+    expect(csv).not.toContain('Not converted: D')
+  })
+
+  it('rounds JPY to 0 decimal places', () => {
+    const jpyRows: BomRow[] = [
+      {
+        category: 'wire',
+        name: 'J',
+        ipn: '',
+        manufacturer: '',
+        mpn: '',
+        quantity: 1,
+        cost: { amount: 0.1, currency: 'USD' }
+      }
+    ]
+    const csv = toCsv(jpyRows, { currency: 'JPY', rates })
+    expect(csv).toContain('Converted total (JPY),15')
+    expect(csv).toContain(',15,15')
+  })
+
+  it('keeps the original output when no conversion is requested', () => {
+    const csv = toCsv(rows)
+    expect(csv).not.toContain('Unit Cost (USD)')
+    expect(csv).not.toContain('Converted total')
+  })
+})
+
 describe('exportBomCsv', () => {
   afterEach(() => vi.unstubAllGlobals())
 
@@ -100,5 +189,25 @@ describe('exportBomCsv', () => {
     })
     const res = await exportBomCsv(project, lib)
     expect(res.error).toContain('disk full')
+  })
+})
+
+describe('toCsv conversion rounding', () => {
+  it('grand total equals the sum of the rounded converted line values', () => {
+    const rows = [1, 2, 3].map((i) => ({
+      category: 'device',
+      name: `P${i}`,
+      ipn: '',
+      manufacturer: '',
+      mpn: '',
+      quantity: 1,
+      cost: { amount: 0.335, currency: 'EUR' },
+      weightGrams: undefined
+    }))
+    const csv = toCsv(rows as never, { currency: 'USD', rates: { EUR: 1, USD: 1.0 } })
+    const lines = csv.split('\n')
+    const ext = lines.slice(1, 4).map((l) => Number(l.split(',').pop()))
+    expect(ext).toEqual([0.34, 0.34, 0.34])
+    expect(lines.find((l) => l.startsWith('Converted total'))).toBe('Converted total (USD),1.02')
   })
 })

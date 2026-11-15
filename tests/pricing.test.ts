@@ -55,10 +55,15 @@ describe('fx', () => {
   it('fetches rates and caches them', async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValue({ ok: true, json: async () => ({ rates: { USD: 1.1, AUD: 1.6 } }) })
+      .mockResolvedValue({
+        ok: true,
+        json: async () => ({ date: '2024-01-02', rates: { USD: 1.1, AUD: 1.6 } })
+      })
     vi.stubGlobal('fetch', fetchMock)
-    const rates = await fetchRates()
-    expect(rates).toEqual({ EUR: 1, USD: 1.1, AUD: 1.6 })
+    const fetched = await fetchRates()
+    expect(fetched?.rates).toEqual({ EUR: 1, USD: 1.1, AUD: 1.6 })
+    expect(fetched?.date).toBe('2024-01-02')
+    expect(fetched?.source).toContain('Frankfurter')
     await fetchRates()
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })

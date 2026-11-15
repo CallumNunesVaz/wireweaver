@@ -1,8 +1,9 @@
+import Decimal from 'decimal.js'
 import type { Money, Project } from './types'
 import { csvCell } from './csv'
 import type { LibraryLike } from './derivation'
 import { resolveEndpoint } from './derivation'
-import { formatMoney } from './currency'
+import { currencyDecimals, formatMoney } from './currency'
 
 export interface BomRow {
   category: string
@@ -118,7 +119,23 @@ export function buildBom(project: Project, lib: LibraryLike): BomRow[] {
   return rows
 }
 
-export function toCsv(rows: BomRow[]): string {
+export interface ToCsvOptions {
+  /** Target ISO currency for the converted columns; omit to export per-currency totals. */
+  currency?: string
+  /** EUR-referenced FX rates (currency code → units per EUR). */
+  rates?: Record<string, number>
+  /** Publication date of `rates`, written to the footer. */
+  rateDate?: string
+  /** Human-readable source of `rates`, written to the footer. */
+  rateSource?: string
+}
+
+export function toCsv(rows: BomRow[], options: ToCsvOptions = {}): string {
+  const { currency, rates, rateDate, rateSource } = options
+  const convert = !!currency && !!rates
+  const targetRate = convert ? rates[currency] : undefined
+  const targetDecimals = convert ? currencyDecimals(currency) : 2
+
   const header = [
     'Category',
     'Name',
@@ -130,35 +147,73 @@ export function toCsv(rows: BomRow[]): string {
     'Ext Cost',
     'Weight (g)'
   ]
+  if (convert) header.push(`Unit Cost (${currency})`, `Ext Cost (${currency})`)
+
   const esc = csvCell
   const lines = [header.join(',')]
+  const notConverted: string[] = []
+  // The grand total is the sum of the rounded line values the reader sees, so
+  // the column always adds up exactly.
+  let convertedTotal = new Decimal(0)
+
   for (const r of rows) {
     const ext = r.cost
       ? formatMoney({ amount: r.cost.amount * r.quantity, currency: r.cost.currency })
       : '—'
-    lines.push(
-      [
-        r.category,
-        r.name,
-        r.ipn,
-        r.manufacturer,
-        r.mpn,
-        r.quantity,
-        formatMoney(r.cost ?? { amount: 0, currency: 'USD' }),
-        ext,
-        r.weightGrams ?? ''
-      ]
-        .map(esc)
-        .join(',')
-    )
+    const cells: (string | number)[] = [
+      r.category,
+      r.name,
+      r.ipn,
+      r.manufacturer,
+      r.mpn,
+      r.quantity,
+      formatMoney(r.cost ?? { amount: 0, currency: 'USD' }),
+      ext,
+      r.weightGrams ?? ''
+    ]
+    if (convert) {
+      const rowCurrency = r.cost?.currency
+      const fromRate = rowCurrency ? rates[rowCurrency] : undefined
+      if (rowCurrency && fromRate && targetRate) {
+        const unit = new Decimal(r.cost!.amount)
+          .div(new Decimal(fromRate))
+          .times(new Decimal(targetRate))
+        const extRounded = unit.times(r.quantity).toDecimalPlaces(targetDecimals, Decimal.ROUND_HALF_UP)
+        convertedTotal = convertedTotal.plus(extRounded)
+        cells.push(
+          unit.toDecimalPlaces(targetDecimals, Decimal.ROUND_HALF_UP).toFixed(targetDecimals),
+          extRounded.toFixed(targetDecimals)
+        )
+      } else if (rowCurrency) {
+        // A priced row whose currency has no rate: empty converted cells, and
+        // recorded in the footer so the reader knows it was left out.
+        cells.push('', '')
+        notConverted.push(r.name)
+      } else {
+        cells.push('', '')
+      }
+    }
+    lines.push(cells.map(esc).join(','))
   }
 
   const totals = bomTotals(rows)
   lines.push('')
   lines.push(`Total weight (g),${totals.weightGrams}`)
-  for (const [currency, amount] of totals.costByCurrency) {
-    lines.push(`Total cost (${currency}),${esc(formatMoney({ amount, currency }))}`)
+  for (const [cur, amount] of totals.costByCurrency) {
+    lines.push(`Total cost (${cur}),${esc(formatMoney({ amount, currency: cur }))}`)
   }
+
+  if (convert && targetRate) {
+    lines.push(`Converted total (${currency}),${esc(convertedTotal.toFixed(targetDecimals))}`)
+  }
+  if (convert) {
+    if (rateDate) lines.push(`Rates as of,${esc(rateDate)}`)
+    if (rateSource) lines.push(`Rate source,${esc(rateSource)}`)
+    if (notConverted.length > 0) {
+      lines.push(esc(`Not converted: ${notConverted.join(', ')}`))
+    }
+  }
+
   return lines.join('\n')
 }
 
