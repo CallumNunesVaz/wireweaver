@@ -1,5 +1,5 @@
 import { resolve } from 'node:path'
-import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
+import { defineConfig } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import type { Plugin } from 'vite'
 
@@ -32,17 +32,19 @@ function injectCsp(): Plugin {
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
     build: {
-      rollupOptions: {
+      // electron-vite 6 deprecated `externalizeDepsPlugin()` in favour of the
+      // `build.externalizeDeps` option (default true; kept explicit).
+      externalizeDeps: true,
+      rolldownOptions: {
         input: { index: resolve('electron/main/index.ts') }
       }
     }
   },
   preload: {
-    plugins: [externalizeDepsPlugin()],
     build: {
-      rollupOptions: {
+      externalizeDeps: true,
+      rolldownOptions: {
         input: { index: resolve('electron/preload/index.ts') }
       }
     }
@@ -55,25 +57,23 @@ export default defineConfig({
       }
     },
     build: {
-      rollupOptions: {
+      rolldownOptions: {
         input: { index: resolve('index.html') },
         output: {
           // Split the largest third-party libraries into their own chunks so
           // the entry bundle stays small and vendor code caches across builds.
-          manualChunks(id: string) {
-            if (!id.includes('/node_modules/')) return undefined
-            if (id.includes('@xyflow')) return 'xyflow'
-            if (id.includes('/dagre/') || id.includes('/graphlib/')) return 'dagre'
-            if (id.includes('/fuse.js/')) return 'fuse'
-            if (id.includes('/yaml/')) return 'yaml'
-            if (
-              id.includes('/react/') ||
-              id.includes('/react-dom/') ||
-              id.includes('/scheduler/')
-            ) {
-              return 'react'
-            }
-            return undefined
+          // Vite 8 bundles with rolldown, whose `output.manualChunks` is
+          // deprecated; the same split is expressed via `codeSplitting.groups`.
+          codeSplitting: {
+            groups: [
+              // Higher priority so React core is captured before @xyflow/react's
+              // recursive dependency inclusion can hoist it into the xyflow chunk.
+              { name: 'react', test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/, priority: 10 },
+              { name: 'xyflow', test: /node_modules[\\/]@xyflow[\\/]/ },
+              { name: 'dagre', test: /node_modules[\\/](dagre|graphlib)[\\/]/ },
+              { name: 'fuse', test: /node_modules[\\/]fuse\.js[\\/]/ },
+              { name: 'yaml', test: /node_modules[\\/]yaml[\\/]/ }
+            ]
           }
         }
       }
