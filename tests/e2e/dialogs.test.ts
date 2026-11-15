@@ -8,6 +8,7 @@
  *   npm run build
  *   npm run test:e2e          # sets WW_E2E=1, runs tests/e2e
  */
+import { PROJECT_SCHEMA_VERSION } from '../../src/model/project-file'
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import {
   cpSync,
@@ -145,7 +146,7 @@ describe.skipIf(!isE2E)('WireWeaver dialog seam (E2E)', { timeout: 30_000 }, () 
     expect(await waitFor(() => existsSync(savePath))).toBe(true)
 
     const written = JSON.parse(readFileSync(savePath, 'utf8'))
-    expect(written.schemaVersion).toBe(2)
+    expect(written.schemaVersion).toBe(PROJECT_SCHEMA_VERSION)
     expect(written.name).toBe('My Test Project')
     expect(await titleName()).toBe('My Test Project')
     expect(await dirtyDot()).toBe(false)
