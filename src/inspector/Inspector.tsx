@@ -81,9 +81,12 @@ function InstanceInspector({ id }: { id: string }) {
   const { lib: effLib, snapshotOnly } = useEffectiveLibrary()
   const part = instance ? effLib.parts[instance.partId] : undefined
   const openPartEditor = useUiStore((s) => s.openPartEditor)
+  const openConnectPorts = useUiStore((s) => s.openConnectPorts)
   const select = useUiStore((s) => s.select)
 
   if (!instance) return null
+
+  const canConnect = part != null && part.kind === 'device' && part.ports.length > 0
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -127,7 +130,16 @@ function InstanceInspector({ id }: { id: string }) {
           </div>
         )}
       </div>
-      <div className="flex gap-1 border-t border-edge p-2">
+      <div className="flex flex-wrap gap-1 border-t border-edge p-2">
+        <button
+          className="ww-btn-primary w-full justify-center"
+          onClick={() => openConnectPorts(id)}
+          disabled={!canConnect}
+          title="Connect ports (C)"
+          aria-label="Connect ports"
+        >
+          <Cable size={13} /> Connect…
+        </button>
         {part && !snapshotOnly.has(part.id) && (
           <button
             className="ww-btn flex-1"

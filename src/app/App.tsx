@@ -34,6 +34,9 @@ const PinoutTemplateEditor = lazy(() =>
   import('../library/PinoutTemplateEditor').then((m) => ({ default: m.PinoutTemplateEditor }))
 )
 const HarnessEditor = lazy(() => import('../harness/HarnessEditor').then((m) => ({ default: m.HarnessEditor })))
+const ConnectPortsDialog = lazy(() =>
+  import('../assembly/ConnectPortsDialog').then((m) => ({ default: m.ConnectPortsDialog }))
+)
 const LibraryManager = lazy(() => import('../library/LibraryManager').then((m) => ({ default: m.LibraryManager })))
 const ReportsModal = lazy(() => import('../reports/ReportsModal').then((m) => ({ default: m.ReportsModal })))
 const DrcPanel = lazy(() => import('../reports/DrcPanel').then((m) => ({ default: m.DrcPanel })))
@@ -139,6 +142,7 @@ export default function App() {
   const partEditor = useUiStore((s) => s.partEditor)
   const templateEditorId = useUiStore((s) => s.templateEditorId)
   const harnessEditorId = useUiStore((s) => s.harnessEditorId)
+  const connectPortsInstanceId = useUiStore((s) => s.connectPortsInstanceId)
   const libraryManagerOpen = useUiStore((s) => s.libraryManagerOpen)
   const reportsOpen = useUiStore((s) => s.reportsOpen)
   const drcOpen = useUiStore((s) => s.drcOpen)
@@ -242,6 +246,9 @@ export default function App() {
       } else if (e.key === 'F2') {
         e.preventDefault()
         void renameSelection()
+      } else if (key === 'c' && ui.selection?.type === 'instance') {
+        e.preventDefault()
+        ui.openConnectPorts(ui.selection.id)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -256,6 +263,15 @@ export default function App() {
       { id: 'save', label: 'Save project', hint: 'Ctrl+S', run: () => void saveProject() },
       { id: 'saveas', label: 'Save project as…', hint: 'Ctrl+Shift+S', run: () => void saveProject(true) },
       { id: 'rename', label: 'Rename project…', run: () => void renameProject() },
+      {
+        id: 'connect',
+        label: 'Connect ports…',
+        hint: 'C',
+        run: () => {
+          const sel = ui().selection
+          if (sel?.type === 'instance') ui().openConnectPorts(sel.id)
+        }
+      },
       { id: 'bom', label: 'Export BOM (CSV)', hint: 'Ctrl+B', run: () => void exportBom() },
       { id: 'reports', label: 'Reports & exports', hint: 'Ctrl+R', run: () => ui().toggleReports() },
       { id: 'library', label: 'Library Manager', hint: 'Ctrl+L', run: () => ui().toggleLibraryManager() },
@@ -317,6 +333,12 @@ export default function App() {
           <ErrorBoundary resetKey={harnessEditorId} label="the harness editor">
             <HarnessEditor harnessId={harnessEditorId} />
           </ErrorBoundary>
+        )}
+        {connectPortsInstanceId != null && (
+          <ConnectPortsDialog
+            instanceId={connectPortsInstanceId}
+            onClose={() => ui().closeConnectPorts()}
+          />
         )}
         {partEditor && <PartEditor onClose={closePartEditor} />}
         {templateEditorId !== undefined && <PinoutTemplateEditor />}

@@ -25,6 +25,36 @@ function usedPins(wires: HarnessWire[]): Set<string> {
   return used
 }
 
+/** Wired pin positions per endpoint label, for disabling already-wired pins. */
+export function wiredPositionsByEnd(
+  wires: HarnessWire[],
+  endpointCount: number
+): Record<string, Set<number>> {
+  const all: Record<string, Set<number>> = {}
+  for (let i = 0; i < endpointCount; i++) all[endLabel(i)] = new Set<number>()
+  for (const w of wires) {
+    all[w.from.end]?.add(w.from.position)
+    all[w.to.end]?.add(w.to.position)
+  }
+  return all
+}
+
+/** Whether a proposed wire is allowed: not a self-pin, and neither pin already wired. */
+export function isValidWireConnection(
+  wires: HarnessWire[],
+  from: { end: string; position: number },
+  to: { end: string; position: number }
+): boolean {
+  if (from.end === to.end && from.position === to.position) return false
+  const isWired = (end: string, position: number) =>
+    wires.some(
+      (w) =>
+        (w.from.end === end && w.from.position === position) ||
+        (w.to.end === end && w.to.position === position)
+    )
+  return !isWired(from.end, from.position) && !isWired(to.end, to.position)
+}
+
 const norm = (p: PinDef): string => p.signal.trim().toLowerCase()
 
 /**

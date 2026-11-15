@@ -48,14 +48,20 @@ if (typeof window !== 'undefined' && !(window as { __wwOverlay__?: boolean }).__
   window.addEventListener('keydown', onWindowKeyDown)
 }
 
+export interface OverlayHandle {
+  z: number
+  id: number
+}
+
 /**
  * Register an overlay for as long as the calling component is mounted (and
- * `active` is true). Returns the z-index to apply to the overlay's root.
+ * `active` is true). Returns the z-index to apply to the overlay's root plus
+ * its stable id, for callers that need to know which overlay they are.
  */
-export function useOverlay(
+export function useOverlayEntry(
   onClose: () => void,
   opts: { kind?: OverlayKind; allowsUndo?: boolean; active?: boolean } = {}
-): number {
+): OverlayHandle {
   const { kind = 'modal', allowsUndo = false, active = true } = opts
   const idRef = useRef(0)
   if (idRef.current === 0) idRef.current = seq++
@@ -76,7 +82,30 @@ export function useOverlay(
   }, [id, kind, allowsUndo, active])
 
   const index = useOverlayStore((s) => s.stack.findIndex((e) => e.id === id))
-  return BASE_Z + Math.max(0, index) * STEP_Z
+  return { z: BASE_Z + Math.max(0, index) * STEP_Z, id }
+}
+
+/**
+ * Register an overlay for as long as the calling component is mounted (and
+ * `active` is true). Returns the z-index to apply to the overlay's root.
+ */
+export function useOverlay(
+  onClose: () => void,
+  opts: { kind?: OverlayKind; allowsUndo?: boolean; active?: boolean } = {}
+): number {
+  return useOverlayEntry(onClose, opts).z
+}
+
+/**
+ * True when `id` is the topmost non-popup overlay: it is either the top of the
+ * stack or has only popups floating above it (e.g. a docked panel inside a
+ * workspace). Used to scope shortcuts to a specific full-screen workspace.
+ */
+export function isTopWorkspace(id: number): boolean {
+  const { stack } = useOverlayStore.getState()
+  let i = stack.length - 1
+  while (i >= 0 && stack[i].kind === 'popup') i--
+  return i >= 0 && stack[i].id === id
 }
 
 /** True while any overlay is open. */
