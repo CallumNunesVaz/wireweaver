@@ -1,7 +1,7 @@
 {
   "name": "wireweaver",
   "version": "0.1.0",
-  "description": "WireWeaver — build connection diagrams of devices linked by wire harnesses",
+  "description": "WireWeaver \u2014 build connection diagrams of devices linked by wire harnesses",
   "main": "./out/main/index.js",
   "author": "WireWeaver",
   "license": "MIT",
@@ -20,7 +20,7 @@
     "package:linux": "electron-vite build && electron-builder --linux",
     "package:mac": "electron-vite build && electron-builder --mac",
     "lint": "eslint .",
-    "test:e2e": "WW_E2E=1 vitest run tests/e2e --no-file-parallelism"
+    "test:e2e": "vitest run -c vitest.e2e.config.mts"
   },
   "dependencies": {
     "@xyflow/react": "^12.3.5",

@@ -37,21 +37,14 @@ jobs:
       # npm ci does not always fetch Electron's binary; make sure it exists.
       - run: node node_modules/electron/install.js
       - run: npm i --no-save playwright-core
-      - name: E2E smoke test (Linux)
+      - name: E2E tests (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update && sudo apt-get install -y xvfb
           xvfb-run -a npm run test:e2e
-      - name: E2E smoke test (macOS)
-        if: runner.os == 'macOS'
+      - name: E2E tests (Windows, macOS)
+        if: runner.os != 'Linux'
         run: npm run test:e2e
-      # `npm run test:e2e` uses POSIX `WW_E2E=1` env syntax, which cmd.exe on
-      # Windows does not understand; run vitest directly with the env set here.
-      - name: E2E smoke test (Windows)
-        if: runner.os == 'Windows'
-        run: npx vitest run tests/smoke.test.ts
-        env:
-          WW_E2E: '1'
 
   package:
     runs-on: ${{ matrix.os }}
