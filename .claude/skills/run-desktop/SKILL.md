@@ -66,14 +66,45 @@ merged into the sandboxed library on open).
 - **`clickTitle` / `clickText`** — DOM clicks for buttons; every header action
   has a `title` attribute.
 
+## Test-only dialog seam
+
+Native Open/Save dialogs cannot be driven by Playwright. When the app is
+launched with `WW_E2E=1` (and unpackaged), `electron/main/testDialogs.ts`
+answers `dialog.showOpenDialog` / `dialog.showSaveDialog` from a FIFO queue on
+the main-process global instead of showing a real dialog. Queue an answer with
+the driver helper before triggering the dialog:
+
+```js
+import { launch, helpers, queueDialog, closeApp } from './driver.mjs'
+const { app, page } = await launch()
+const h = helpers(page, app)
+
+await queueDialog(app, { filePaths: ['/abs/path/out.wwv'] }) // Open/Save → this path
+await queueDialog(app, { canceled: true })                    // → user cancelled
+```
+
+- Answers are consumed in order; the queue is empty by default, in which case
+  the dialog resolves as **cancelled** (so a forgotten queue is safe, not a
+  hang).
+- Returned paths still go through the normal path-grant logic
+  (`grantFile` / `grantedDirs`); the seam cannot open a path the user never
+  picked.
+- The seam is **inert in packaged builds**: it checks both
+  `process.env.WW_E2E === '1'` and `!app.isPackaged`.
+- Starter packs read from `packsDir()` can be pointed at a fixture with the
+  `WW_PACKS_DIR` env var (same guard) — put a copy of `tests/fixtures/packs`
+  in a temp dir and set `WW_PACKS_DIR` before `launch()`.
+
 ## Gotchas (each cost a failed run)
 
 1. **Selecting anything opens the Inspector**, which overlays the right ~290px
    of the canvas and silently swallows drags/drops on handles under it.
    Deselect first (click empty pane) or check occlusion via `probe()`.
 2. **Native dialogs are unscriptable** (Open/Save/PDF pickers, `window.confirm`,
-   the dirty-close prompt). Open projects via the seeded Recent menu; don't
-   test export *file writes* this way — stop at the button.
+   the dirty-close prompt). Under `WW_E2E=1` the Open/Save dialogs are stubbed —
+   see "Test-only dialog seam" above and use `queueDialog(app, …)`. The
+   dirty-close prompt (`dialog.showMessageBox`) is still native: clear the
+   dirty flag over IPC first, or open projects via the seeded Recent menu.
 3. **Short wires vs the wire popup**: the wire-edit popup opens at the click
    point and is ~245px wide; at fit-view zoom wires between adjacent columns
    are shorter than that. Zoom first — React Flow zooms toward the cursor:

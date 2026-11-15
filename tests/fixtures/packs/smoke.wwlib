@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "parts": [
+    {
+      "id": "smoke-conn-m8",
+      "kind": "connector",
+      "name": "M8 4-pin",
+      "type": "COTS",
+      "internalPartNumber": "SMOKE-CONN-0001",
+      "manufacturer": "SmokeCo",
+      "manufacturerPartNumber": "M8-4P",
+      "supplier": "SmokeCo",
+      "supplierPartNumber": "M8-4P",
+      "positions": 4,
+      "gender": "male"
+    },
+    {
+      "id": "smoke-dev-temp",
+      "kind": "device",
+      "name": "Temperature Probe",
+      "type": "COTS",
+      "internalPartNumber": "SMOKE-DEV-0001",
+      "manufacturer": "SmokeCo",
+      "manufacturerPartNumber": "TP-1",
+      "supplier": "SmokeCo",
+      "supplierPartNumber": "TP-1",
+      "ports": [
+        {
+          "id": "p-m8",
+          "name": "M8",
+          "pinoutTemplateId": "smoke-tpl-m8",
+          "side": "left"
+        }
+      ]
+    },
+    {
+      "id": "smoke-wire-ptfe",
+      "kind": "wire",
+      "name": "24 AWG PTFE (white)",
+      "type": "COTS",
+      "internalPartNumber": "SMOKE-WIRE-0001",
+      "manufacturer": "SmokeCo",
+      "manufacturerPartNumber": "PTFE-24-WH",
+      "supplier": "SmokeCo",
+      "supplierPartNumber": "",
+      "gauge": "24 AWG",
+      "color": "white",
+      "conductors": 1
+    }
+  ],
+  "templates": [
+    {
+      "id": "smoke-tpl-m8",
+      "name": "M8 power",
+      "connectorPartId": "smoke-conn-m8",
+      "pins": [
+        { "position": 1, "signal": "VCC", "signalClass": "power" },
+        { "position": 2, "signal": "GND", "signalClass": "ground" },
+        { "position": 3, "signal": "TX", "signalClass": "data" },
+        { "position": 4, "signal": "RX", "signalClass": "data" }
+      ]
+    }
+  ]
+}
