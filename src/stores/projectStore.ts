@@ -2,22 +2,14 @@ import { create } from 'zustand'
 import { temporal } from 'zundo'
 import { nanoid } from 'nanoid'
 import type {
-  DeviceInstance,
   Harness,
   HarnessAccessory,
   HarnessEndpoint,
-  HarnessSplice,
   HarnessWire,
   Project
 } from '../model/types'
-import {
-  pruneInstanceFromHarness,
-  sanitizeTwists,
-  suggestHarnessNames
-} from '../model/derivation'
-import { createRevision, restoreRevision as restoreRevisionFn } from '../model/revisions'
 import { parseProjectFile } from '../model/project-file'
-import { nextSpliceName } from '../model/wiring'
+import * as ops from '../model/ops'
 
 
 interface ProjectState {
@@ -87,21 +79,13 @@ function emptyProject(): Project {
   }
 }
 
-function endpointMatches(e: HarnessEndpoint, deviceInstanceId: string, portId: string): boolean {
-  return e.deviceInstanceId === deviceInstanceId && e.portId === portId
-}
-
-function findHarnessByEndpoint(
-  harnesses: Harness[],
-  deviceInstanceId: string,
-  portId: string
-): string | undefined {
-  for (const h of harnesses) {
-    for (const ep of h.endpoints) {
-      if (endpointMatches(ep, deviceInstanceId, portId)) return h.id
-    }
-  }
-  return undefined
+/**
+ * Apply an ops result. A no-op (ops return the same Project reference when
+ * nothing changed) leaves the state untouched: no dirty flag, no subscriber
+ * notification, no undo entry.
+ */
+function commit<S extends { project: Project }>(s: S, next: Project): S | (Partial<S> & { project: Project; dirty: true }) {
+  return next === s.project ? s : ({ project: next, dirty: true } as Partial<S> & { project: Project; dirty: true })
 }
 
 export const useProjectStore = create<ProjectState>()(
@@ -113,56 +97,24 @@ export const useProjectStore = create<ProjectState>()(
 
       addInstance: (partId, position, label) => {
         flushCoalesce()
-        const id = nanoid()
-        const instance: DeviceInstance = { id, partId, label, position }
-        set((s) => ({
-          project: {
-            ...s.project,
-            deviceInstances: [...s.project.deviceInstances, instance]
-          },
-          dirty: true
-        }))
+        const { project, id } = ops.addInstance(get().project, partId, position, label)
+        set((s) => commit(s, project))
         return id
       },
 
       updateInstancePosition: (id, position) => {
         flushCoalesce()
-        set((s) => ({
-          project: {
-            ...s.project,
-            deviceInstances: s.project.deviceInstances.map((d) =>
-              d.id === id ? { ...d, position } : d
-            )
-          },
-          dirty: true
-        }))
+        set((s) => commit(s, ops.updateInstancePosition(s.project, id, position)))
       },
 
       updateInstancePositions: (updates) => {
         flushCoalesce()
-        const index = new Map(updates.map((u) => [u.id, u.position]))
-        set((s) => ({
-          project: {
-            ...s.project,
-            deviceInstances: s.project.deviceInstances.map((d) =>
-              index.has(d.id) ? { ...d, position: index.get(d.id)! } : d
-            )
-          },
-          dirty: true
-        }))
+        set((s) => commit(s, ops.updateInstancePositions(s.project, updates)))
       },
 
       setInstanceLabel: (id, label) => {
         coalesceUndo(() =>
-          set((s) => ({
-            project: {
-              ...s.project,
-              deviceInstances: s.project.deviceInstances.map((d) =>
-                d.id === id ? { ...d, label } : d
-              )
-            },
-            dirty: true
-          }))
+          set((s) => commit(s, ops.setInstanceLabel(s.project, id, label)))
         )
       },
 
@@ -171,323 +123,118 @@ export const useProjectStore = create<ProjectState>()(
       removeInstances: (ids) => {
         flushCoalesce()
         if (ids.length === 0) return
-        const gone = new Set(ids)
-        set((s) => {
-          let harnesses = s.project.harnesses
-          for (const id of ids) {
-            harnesses = harnesses
-              .map((h) => pruneInstanceFromHarness(h, id))
-              .filter((h): h is Harness => h !== null)
-          }
-          return {
-            project: {
-              ...s.project,
-              deviceInstances: s.project.deviceInstances.filter((d) => !gone.has(d.id)),
-              harnesses
-            },
-            dirty: true
-          }
-        })
+        set((s) => commit(s, ops.removeInstances(s.project, ids)))
       },
 
       duplicateInstance: (id) => {
         flushCoalesce()
-        const src = get().project.deviceInstances.find((d) => d.id === id)
-        if (!src) return
-        const copy: DeviceInstance = {
-          ...src,
-          id: nanoid(),
-          label: `${src.label} copy`,
-          position: { x: src.position.x + 40, y: src.position.y + 40 }
-        }
-        set((s) => ({
-          project: {
-            ...s.project,
-            deviceInstances: [...s.project.deviceInstances, copy]
-          },
-          dirty: true
-        }))
+        set((s) => commit(s, ops.duplicateInstance(s.project, id)))
       },
 
       addHarness: (endpoints, name) => {
         flushCoalesce()
-        if (endpoints.length < 2) return undefined
-        const { harnesses, deviceInstances } = get().project
-
-        for (const ep of endpoints) {
-          const existingId = findHarnessByEndpoint(harnesses, ep.deviceInstanceId, ep.portId)
-          if (existingId) {
-            for (const ep2 of endpoints) {
-              addEndpointToHarnessFn(existingId, ep2)
-            }
-            return existingId
-          }
-        }
-
-        const id = nanoid()
-        const labels = suggestHarnessNames(
-          deviceInstances,
-          endpoints.map((e) => e.deviceInstanceId)
-        )
-        const harness: Harness = {
-          id,
-          name: name ?? labels,
-          endpoints,
-          wires: [],
-          segments: [],
-          accessories: [],
-          splices: []
-        }
-        set((s) => ({
-          project: { ...s.project, harnesses: [...s.project.harnesses, harness] },
-          dirty: true
-        }))
-        return id
+        const r = ops.addHarness(get().project, endpoints, name)
+        if (!r) return undefined
+        set((s) => commit(s, r.project))
+        return r.id
       },
 
       importHarness: (harness) => {
         flushCoalesce()
-        const id = nanoid()
-        const copy: Harness = {
-          ...harness,
-          id,
-          wires: sanitizeTwists(harness.wires),
-          splices: (harness.splices ?? []).map((s) => ({ ...s, id: nanoid() })),
-          accessories: (harness.accessories ?? []).map((a) => ({ ...a, id: nanoid() }))
-        }
-        set((s) => ({
-          project: { ...s.project, harnesses: [...s.project.harnesses, copy] },
-          dirty: true
-        }))
+        const { project, id } = ops.importHarness(get().project, harness)
+        set((s) => commit(s, project))
         return id
       },
 
       addEndpointToHarness: (harnessId, endpoint) => {
         flushCoalesce()
-        return addEndpointToHarnessFn(harnessId, endpoint)
+        const { project, added } = ops.addEndpoint(get().project, harnessId, endpoint)
+        set((s) => commit(s, project))
+        return added
       },
 
       findHarnessByEndpoint: (deviceInstanceId, portId) => {
-        return findHarnessByEndpoint(get().project.harnesses, deviceInstanceId, portId)
+        return ops.findHarnessByEndpoint(get().project.harnesses, deviceInstanceId, portId)
       },
 
       updateHarness: (id, patch) => {
         coalesceUndo(() =>
-          set((s) => ({
-            project: {
-              ...s.project,
-              harnesses: s.project.harnesses.map((h) =>
-                h.id === id ? { ...h, ...patch } : h
-              )
-            },
-            dirty: true
-          }))
+          set((s) => commit(s, ops.updateHarness(s.project, id, patch)))
         )
       },
 
       setHarnessWires: (id, wires) => {
         flushCoalesce()
-        set((s) => ({
-          project: {
-            ...s.project,
-            harnesses: s.project.harnesses.map((h) =>
-              h.id === id ? { ...h, wires: sanitizeTwists(wires) } : h
-            )
-          },
-          dirty: true
-        }))
+        set((s) => commit(s, ops.setWires(s.project, id, wires)))
       },
 
       setHarnessSegment: (id, fromEnd, toEnd, patch) => {
         flushCoalesce()
-        set((s) => ({
-          project: {
-            ...s.project,
-            harnesses: s.project.harnesses.map((h) => {
-              if (h.id !== id) return h
-              const segs = [...h.segments]
-              const idx = segs.findIndex((seg) => seg.fromEnd === fromEnd && seg.toEnd === toEnd)
-              if (idx >= 0) {
-                segs[idx] = { ...segs[idx], ...patch }
-              } else {
-                segs.push({ fromEnd, toEnd, ...patch })
-              }
-              return { ...h, segments: segs }
-            })
-          },
-          dirty: true
-        }))
+        set((s) => commit(s, ops.upsertSegment(s.project, id, fromEnd, toEnd, patch)))
       },
 
       removeHarness: (id) => {
         flushCoalesce()
-        set((s) => ({
-          project: {
-            ...s.project,
-            harnesses: s.project.harnesses.filter((h) => h.id !== id)
-          },
-          dirty: true
-        }))
+        set((s) => commit(s, ops.removeHarness(s.project, id)))
       },
 
       duplicateHarness: (id) => {
         flushCoalesce()
-        const src = get().project.harnesses.find((h) => h.id === id)
-        if (!src) return
-        // Two passes: assign every new wire id first, then remap twistedWith,
-        // otherwise a wire can reference a mate whose new id isn't known yet.
-        const wireIds = new Map<string, string>()
-        for (const w of src.wires) wireIds.set(w.id, nanoid())
-        const wires = src.wires.map((w) => ({
-          ...w,
-          id: wireIds.get(w.id)!,
-          twistedWith: w.twistedWith ? wireIds.get(w.twistedWith) ?? undefined : undefined
-        }))
-        const copy: Harness = {
-          ...src,
-          id: nanoid(),
-          name: `${src.name} copy`,
-          wires,
-          splices: src.splices?.map((s) => ({
-            ...s,
-            id: nanoid(),
-            wireIds: s.wireIds.map((wid) => wireIds.get(wid) ?? wid)
-          })) ?? [],
-          accessories: src.accessories?.map((a) => ({ ...a, id: nanoid() })) ?? []
-        }
-        set((s) => ({
-          project: {
-            ...s.project,
-            harnesses: [...s.project.harnesses, copy]
-          },
-          dirty: true
-        }))
+        set((s) => commit(s, ops.duplicateHarness(s.project, id)))
       },
 
       addHarnessAccessory: (harnessId, acc) => {
         flushCoalesce()
-        const accessory: HarnessAccessory = { ...acc, id: nanoid() }
-        set((s) => ({
-          project: {
-            ...s.project,
-            harnesses: s.project.harnesses.map((h) =>
-              h.id === harnessId
-                ? { ...h, accessories: [...(h.accessories ?? []), accessory] }
-                : h
-            )
-          },
-          dirty: true
-        }))
+        set((s) => {
+          const r = ops.addHarnessAccessory(s.project, harnessId, acc)
+          return commit(s, r.project)
+        })
       },
 
       removeHarnessAccessory: (harnessId, accId) => {
         flushCoalesce()
-        set((s) => ({
-          project: {
-            ...s.project,
-            harnesses: s.project.harnesses.map((h) =>
-              h.id === harnessId
-                ? { ...h, accessories: (h.accessories ?? []).filter((a) => a.id !== accId) }
-                : h
-            )
-          },
-          dirty: true
-        }))
+        set((s) => commit(s, ops.removeHarnessAccessory(s.project, harnessId, accId)))
       },
 
       addSplice: (harnessId, wireIds) => {
         flushCoalesce()
-        const h = get().project.harnesses.find((x) => x.id === harnessId)
-        const splice: HarnessSplice = { id: nanoid(), name: nextSpliceName(h?.splices), wireIds }
-        set((s) => ({
-          project: {
-            ...s.project,
-            harnesses: s.project.harnesses.map((h) =>
-              h.id === harnessId
-                ? { ...h, splices: [...(h.splices ?? []), splice] }
-                : h
-            )
-          },
-          dirty: true
-        }))
+        set((s) => {
+          const r = ops.addSplice(s.project, harnessId, wireIds)
+          return commit(s, r.project)
+        })
       },
 
       removeSplice: (harnessId, spliceId) => {
         flushCoalesce()
-        set((s) => ({
-          project: {
-            ...s.project,
-            harnesses: s.project.harnesses.map((h) =>
-              h.id === harnessId
-                ? { ...h, splices: (h.splices ?? []).filter((sp) => sp.id !== spliceId) }
-                : h
-            )
-          },
-          dirty: true
-        }))
+        set((s) => commit(s, ops.removeSplice(s.project, harnessId, spliceId)))
       },
 
       moveSplice: (harnessId, spliceId, position) => {
         flushCoalesce()
-        set((s) => ({
-          project: {
-            ...s.project,
-            harnesses: s.project.harnesses.map((h) =>
-              h.id === harnessId
-                ? {
-                    ...h,
-                    splices: (h.splices ?? []).map((sp) =>
-                      sp.id === spliceId ? { ...sp, position } : sp
-                    )
-                  }
-                : h
-            )
-          },
-          dirty: true
-        }))
+        set((s) => commit(s, ops.moveSplice(s.project, harnessId, spliceId, position)))
       },
 
       assignSpliceWire: (harnessId, spliceId, wirePartId) => {
         flushCoalesce()
-        set((s) => ({
-          project: {
-            ...s.project,
-            harnesses: s.project.harnesses.map((h) =>
-              h.id === harnessId
-                ? {
-                    ...h,
-                    splices: (h.splices ?? []).map((sp) =>
-                      sp.id === spliceId ? { ...sp, wirePartId } : sp
-                    )
-                  }
-                : h
-            )
-          },
-          dirty: true
-        }))
+        set((s) => commit(s, ops.assignSpliceWire(s.project, harnessId, spliceId, wirePartId).project))
       },
 
       addRevision: (label, description) => {
         flushCoalesce()
-        const rev = createRevision(get().project, label, description)
-        set((s) => ({
-          project: {
-            ...s.project,
-            revisions: [...(s.project.revisions ?? []), rev]
-          },
-          dirty: true
-        }))
+        set((s) => {
+          const r = ops.addRevision(s.project, label, description)
+          return commit(s, r.project)
+        })
       },
 
       restoreRevision: (revisionId) => {
         flushCoalesce()
-        const restored = restoreRevisionFn(get().project, revisionId)
-        set({ project: restored, dirty: true })
+        set((s) => commit(s, ops.restoreRevision(s.project, revisionId)))
       },
 
       setProjectMeta: (patch) => {
         coalesceUndo(() =>
-          set((s) => ({ project: { ...s.project, ...patch }, dirty: true }))
+          set((s) => commit(s, ops.setProjectMeta(s.project, patch)))
         )
       },
 
@@ -542,22 +289,4 @@ function flushCoalesce(): void {
   clearTimeout(coalesceTimer)
   coalesceTimer = null
   useProjectStore.temporal.getState().resume()
-}
-
-function addEndpointToHarnessFn(harnessId: string, endpoint: HarnessEndpoint): boolean {
-  const { harnesses } = useProjectStore.getState().project
-  if (!harnesses.some((h) => h.id === harnessId)) return false
-  if (findHarnessByEndpoint(harnesses, endpoint.deviceInstanceId, endpoint.portId)) {
-    return false
-  }
-  useProjectStore.setState((s) => ({
-    project: {
-      ...s.project,
-      harnesses: s.project.harnesses.map((h) =>
-        h.id === harnessId ? { ...h, endpoints: [...h.endpoints, endpoint] } : h
-      )
-    },
-    dirty: true
-  }))
-  return true
 }

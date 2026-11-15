@@ -29,13 +29,9 @@ import type {
   SubassemblyPart,
   WirePart
 } from './types'
-import { endIndex, endLabel, isDevice, isWire } from './types'
+import { endLabel, isDevice, isWire } from './types'
 import type { LibraryLike } from './derivation'
-import {
-  resolveAllEndpoints,
-  resolveEndpoint,
-  sanitizeTwists
-} from './derivation'
+import { resolveAllEndpoints, resolveEndpoint } from './derivation'
 import { runDrc, type DrcIssue } from './drc'
 import {
   buildBom,
@@ -52,15 +48,12 @@ import {
 } from './reports'
 import { wirevizYaml } from './wireviz'
 import { importWireViz } from './wireviz-import'
-import {
-  createRevision as makeRevision,
-  diffRevisions,
-  restoreRevision as restoreRevisionFn
-} from './revisions'
+import { diffRevisions } from './revisions'
 import { createSubassembly as makeSubassembly, instantiateSubassemblyHarness } from './subassembly'
 import { withSnapshots } from './snapshot'
-import { nextSpliceName, planAutoWire } from './wiring'
+import { planAutoWire } from './wiring'
 import { parseProjectFile, serializeProjectFile } from './project-file'
+import * as ops from './ops'
 
 // ---------------------------------------------------------------------------
 // Workspace
@@ -305,47 +298,15 @@ export function addDevice(ws: Workspace, spec: DeviceSpec): DeviceInstance {
     )
   }
   const count = ws.project.deviceInstances.filter((i) => i.partId === part.id).length
-  const instance: DeviceInstance = {
-    id: nanoid(),
-    partId: part.id,
-    label: spec.label ?? (count > 0 ? `${part.name} ${count + 1}` : part.name),
-    position: spec.position ?? { x: 0, y: 0 }
-  }
-  ws.project.deviceInstances.push(instance)
-  return instance
+  const label = spec.label ?? (count > 0 ? `${part.name} ${count + 1}` : part.name)
+  const position = spec.position ?? { x: 0, y: 0 }
+  const { project, id } = ops.addInstance(ws.project, part.id, position, label)
+  ws.project = project
+  return { id, partId: part.id, label, position }
 }
 
 export function removeDevice(ws: Workspace, instanceId: string): void {
-  ws.project.deviceInstances = ws.project.deviceInstances.filter(
-    (i) => i.id !== instanceId
-  )
-  // Drop harnesses that no longer have at least two endpoints.
-  ws.project.harnesses = ws.project.harnesses
-    .map((h) => {
-      if (!h.endpoints.some((e) => e.deviceInstanceId === instanceId)) return h
-      const remap = new Map<string, string>()
-      const endpoints: HarnessEndpoint[] = []
-      h.endpoints.forEach((e, i) => {
-        if (e.deviceInstanceId === instanceId) return
-        remap.set(endLabel(i), endLabel(endpoints.length))
-        endpoints.push(e)
-      })
-      if (endpoints.length < 2) return null
-      const wires = sanitizeTwists(
-        h.wires
-          .filter((w) => remap.has(w.from.end) && remap.has(w.to.end))
-          .map((w) => ({
-            ...w,
-            from: { ...w.from, end: remap.get(w.from.end)! },
-            to: { ...w.to, end: remap.get(w.to.end)! }
-          }))
-      )
-      const segments = h.segments
-        .filter((s) => remap.has(s.fromEnd) && remap.has(s.toEnd))
-        .map((s) => ({ ...s, fromEnd: remap.get(s.fromEnd)!, toEnd: remap.get(s.toEnd)! }))
-      return { ...h, endpoints, wires, segments }
-    })
-    .filter((h): h is Harness => h !== null)
+  ws.project = ops.removeInstances(ws.project, [instanceId])
 }
 
 export function listDevices(ws: Workspace) {
@@ -412,14 +373,43 @@ export interface HarnessSpec {
   splices?: { name?: string; wireIds: string[] }[]
 }
 
-/** Ensure a harness endpoint exists for the port, returning its end label. */
-function ensureEndpoint(h: Harness, deviceInstanceId: string, portId: string): string {
-  const existing = h.endpoints.findIndex(
-    (e) => e.deviceInstanceId === deviceInstanceId && e.portId === portId
-  )
-  if (existing >= 0) return endLabel(existing)
-  h.endpoints.push({ deviceInstanceId, portId })
-  return endLabel(h.endpoints.length - 1)
+/**
+ * Resolve a PinRef to an end label + pin position without mutating the project.
+ * When the reference addresses a device/port that is not yet an endpoint, the
+ * label it *would* occupy is computed and the endpoint is queued (both in
+ * `pending` and, for the first occurrence, returned as `endpoint`) so callers
+ * can commit it through `ops.addEndpoint`.
+ */
+function resolveRef(
+  ws: Workspace,
+  h: Harness,
+  ref: PinRef,
+  pending: HarnessEndpoint[]
+): { end: string; position: number; endpoint?: HarnessEndpoint } {
+  if ('end' in ref) return { end: ref.end, position: ref.position }
+  let deviceInstanceId: string
+  let portId: string
+  if ('deviceInstanceId' in ref) {
+    deviceInstanceId = ref.deviceInstanceId
+    portId = ref.portId
+  } else {
+    const inst = findInstance(ws, ref.device)
+    if (!ref.port) throw new Error(`A port is required to address "${ref.device}"`)
+    deviceInstanceId = inst.id
+    portId = portIdByName(ws, inst, ref.port)
+  }
+  const eq = (e: HarnessEndpoint): boolean =>
+    e.deviceInstanceId === deviceInstanceId && e.portId === portId
+  const existing = h.endpoints.findIndex(eq)
+  if (existing >= 0) return { end: endLabel(existing), position: ref.position }
+  const pendingIdx = pending.findIndex(eq)
+  if (pendingIdx >= 0) {
+    return { end: endLabel(h.endpoints.length + pendingIdx), position: ref.position }
+  }
+  const endpoint: HarnessEndpoint = { deviceInstanceId, portId }
+  const end = endLabel(h.endpoints.length + pending.length)
+  pending.push(endpoint)
+  return { end, position: ref.position, endpoint }
 }
 
 function findInstance(ws: Workspace, label: string): DeviceInstance {
@@ -438,59 +428,69 @@ function portIdByName(ws: Workspace, instance: DeviceInstance, port: string): st
 
 /** Resolve a PinRef to a harness end label + pin position, adding an endpoint if needed. */
 export function resolvePinRef(ws: Workspace, h: Harness, ref: PinRef): { end: string; position: number } {
-  if ('end' in ref) return { end: ref.end, position: ref.position }
-  if ('deviceInstanceId' in ref) {
-    return {
-      end: ensureEndpoint(h, ref.deviceInstanceId, ref.portId),
-      position: ref.position
-    }
+  const r = resolveRef(ws, h, ref, [])
+  if (r.endpoint) {
+    ws.project = ops.addEndpoint(ws.project, h.id, r.endpoint).project
   }
-  const inst = findInstance(ws, ref.device)
-  const portId = ref.port ? portIdByName(ws, inst, ref.port) : undefined
-  if (!portId) throw new Error(`A port is required to address "${ref.device}"`)
-  return { end: ensureEndpoint(h, inst.id, portId), position: ref.position }
+  return { end: r.end, position: r.position }
 }
 
 export function createHarness(ws: Workspace, spec: HarnessSpec = {}): Harness {
   const endpoints: HarnessEndpoint[] = [...(spec.endpoints ?? [])]
-  const h: Harness = {
-    id: nanoid(),
-    name: spec.name ?? 'Harness',
-    endpoints,
-    wires: [],
-    segments: [],
-    accessories: [],
-    splices: []
-  }
+  const seen = new Set(endpoints.map((e) => `${e.deviceInstanceId}:${e.portId}`))
   for (const p of spec.ports ?? []) {
     const inst = findInstance(ws, p.device)
-    ensureEndpoint(h, inst.id, portIdByName(ws, inst, p.port))
+    const portId = portIdByName(ws, inst, p.port)
+    const key = `${inst.id}:${portId}`
+    if (!seen.has(key)) {
+      seen.add(key)
+      endpoints.push({ deviceInstanceId: inst.id, portId })
+    }
   }
-  if (h.name === 'Harness' && h.endpoints.length >= 1) {
-    h.name =
-      h.endpoints
+  let name = spec.name ?? 'Harness'
+  if (name === 'Harness' && endpoints.length >= 1) {
+    name =
+      endpoints
         .map((ep) => {
           const inst = ws.project.deviceInstances.find((i) => i.id === ep.deviceInstanceId)
           return inst?.label ?? '?'
         })
         .join('–') || 'Harness'
   }
-  ws.project.harnesses.push(h)
+  const h: Harness = {
+    id: nanoid(),
+    name,
+    endpoints,
+    wires: [],
+    segments: [],
+    accessories: [],
+    splices: []
+  }
+  ws.project = ops.insertHarness(ws.project, h)
   for (const w of spec.wires ?? []) addWire(ws, h.id, w)
   for (const s of spec.segments ?? []) addSegment(ws, h.id, s)
   for (const a of spec.accessories ?? []) addAccessory(ws, h.id, a)
   for (const sp of spec.splices ?? []) addSplice(ws, h.id, sp.wireIds, sp.name)
-  return h
+  return getHarness(ws, h.id)
 }
 
 export function deleteHarness(ws: Workspace, harnessId: string): void {
-  ws.project.harnesses = ws.project.harnesses.filter((h) => h.id !== harnessId)
+  ws.project = ops.removeHarness(ws.project, harnessId)
 }
 
 export function renameHarness(ws: Workspace, harnessId: string, name: string): Harness {
-  const h = getHarness(ws, harnessId)
-  h.name = name
-  return h
+  getHarness(ws, harnessId)
+  ws.project = ops.updateHarness(ws.project, harnessId, { name })
+  return getHarness(ws, harnessId)
+}
+
+/** A port belongs to at most one harness; explain which one already has it. */
+function endpointInUseMessage(ws: Workspace, ep: HarnessEndpoint): string {
+  const owner = ws.project.harnesses.find((x) =>
+    x.endpoints.some((e) => e.deviceInstanceId === ep.deviceInstanceId && e.portId === ep.portId)
+  )
+  const dev = ws.project.deviceInstances.find((d) => d.id === ep.deviceInstanceId)
+  return `Port "${ep.portId}" on "${dev?.label ?? ep.deviceInstanceId}" already belongs to harness "${owner?.name ?? '?'}"`
 }
 
 export function addEndpoint(
@@ -499,47 +499,45 @@ export function addEndpoint(
   endpoint: HarnessEndpoint
 ): string {
   const h = getHarness(ws, harnessId)
-  return ensureEndpoint(h, endpoint.deviceInstanceId, endpoint.portId)
+  const existing = h.endpoints.findIndex(
+    (e) => e.deviceInstanceId === endpoint.deviceInstanceId && e.portId === endpoint.portId
+  )
+  if (existing >= 0) return endLabel(existing)
+  const r = ops.addEndpoint(ws.project, harnessId, endpoint)
+  if (!r.added) throw new Error(endpointInUseMessage(ws, endpoint))
+  ws.project = r.project
+  return endLabel(h.endpoints.length)
 }
 
 export function removeEndpoint(ws: Workspace, harnessId: string, end: string): void {
-  const h = getHarness(ws, harnessId)
-  const idx = endIndex(end)
-  if (idx < 0 || idx >= h.endpoints.length) return
-  const remap = new Map<string, string>()
-  const endpoints: HarnessEndpoint[] = []
-  h.endpoints.forEach((e, i) => {
-    if (i === idx) return
-    remap.set(endLabel(i), endLabel(endpoints.length))
-    endpoints.push(e)
-  })
-  h.endpoints = endpoints
-  h.wires = h.wires
-    .filter((w) => remap.has(w.from.end) && remap.has(w.to.end))
-    .map((w) => ({
-      ...w,
-      from: { ...w.from, end: remap.get(w.from.end)! },
-      to: { ...w.to, end: remap.get(w.to.end)! }
-    }))
-  h.segments = h.segments
-    .filter((s) => remap.has(s.fromEnd) && remap.has(s.toEnd))
-    .map((s) => ({ ...s, fromEnd: remap.get(s.fromEnd)!, toEnd: remap.get(s.toEnd)! }))
+  getHarness(ws, harnessId)
+  ws.project = ops.removeEndpoint(ws.project, harnessId, end)
 }
 
 export function addWire(ws: Workspace, harnessId: string, spec: WireSpec): HarnessWire {
   const h = getHarness(ws, harnessId)
-  const from = resolvePinRef(ws, h, spec.from)
-  const to = resolvePinRef(ws, h, spec.to)
+  const pending: HarnessEndpoint[] = []
+  const from = resolveRef(ws, h, spec.from, pending)
+  const to = resolveRef(ws, h, spec.to, pending)
+
+  let project = ws.project
+  for (const ep of pending) {
+    const r = ops.addEndpoint(project, harnessId, ep)
+    if (!r.added) throw new Error(endpointInUseMessage(ws, ep))
+    project = r.project
+  }
+
   const wire: HarnessWire = {
     id: nanoid(),
-    from,
-    to,
+    from: { end: from.end, position: from.position },
+    to: { end: to.end, position: to.position },
     wirePartId: spec.wirePartId,
     color: spec.color,
     label: spec.label,
     twistedWith: spec.twistedWith
   }
-  h.wires.push(wire)
+  project = ops.addWire(project, harnessId, wire)
+  ws.project = project
   return wire
 }
 
@@ -554,15 +552,14 @@ export function updateWire(
   patch: Partial<Omit<HarnessWire, 'id'>>
 ): HarnessWire {
   const h = getHarness(ws, harnessId)
-  const w = h.wires.find((x) => x.id === wireId)
-  if (!w) throw new Error(`Wire "${wireId}" not found`)
-  Object.assign(w, patch)
-  return w
+  if (!h.wires.some((x) => x.id === wireId)) throw new Error(`Wire "${wireId}" not found`)
+  ws.project = ops.updateWire(ws.project, harnessId, wireId, patch)
+  return ws.project.harnesses.find((x) => x.id === harnessId)!.wires.find((w) => w.id === wireId)!
 }
 
 export function removeWire(ws: Workspace, harnessId: string, wireId: string): void {
-  const h = getHarness(ws, harnessId)
-  h.wires = h.wires.filter((w) => w.id !== wireId)
+  getHarness(ws, harnessId)
+  ws.project = ops.removeWire(ws.project, harnessId, wireId)
 }
 
 /**
@@ -578,32 +575,33 @@ export function autoWire(
   const h = getHarness(ws, harnessId)
   const lib = libOf(ws)
   const { resolved } = resolveAllEndpoints(lib, ws.project.deviceInstances, h)
-  if (opts.overwrite) h.wires = []
-  const added = planAutoWire(resolved, h.endpoints.length, h.wires, { allPairs: opts.allPairs })
-  h.wires.push(...added)
+  const base = opts.overwrite ? [] : h.wires
+  const added = planAutoWire(resolved, h.endpoints.length, base, { allPairs: opts.allPairs })
+  ws.project = ops.setWires(ws.project, harnessId, [...base, ...added])
   return added
 }
 
 export function addSegment(ws: Workspace, harnessId: string, spec: SegmentSpec): HarnessSegment {
   const h = getHarness(ws, harnessId)
-  const fromEnd = typeof spec.from === 'string' ? spec.from : resolvePinRef(ws, h, spec.from).end
-  const toEnd = typeof spec.to === 'string' ? spec.to : resolvePinRef(ws, h, spec.to).end
-  const existing = h.segments.find(
-    (s) => s.fromEnd === fromEnd && s.toEnd === toEnd
-  )
-  if (existing) {
-    if (spec.lengthMm != null) existing.lengthMm = spec.lengthMm
-    if (spec.label != null) existing.label = spec.label
-    return existing
+  const pending: HarnessEndpoint[] = []
+  const fromEnd = typeof spec.from === 'string' ? spec.from : resolveRef(ws, h, spec.from, pending).end
+  const toEnd = typeof spec.to === 'string' ? spec.to : resolveRef(ws, h, spec.to, pending).end
+
+  let project = ws.project
+  for (const ep of pending) {
+    const r = ops.addEndpoint(project, harnessId, ep)
+    if (!r.added) throw new Error(endpointInUseMessage(ws, ep))
+    project = r.project
   }
-  const seg: HarnessSegment = {
-    fromEnd,
-    toEnd,
-    lengthMm: spec.lengthMm,
-    label: spec.label
-  }
-  h.segments.push(seg)
-  return seg
+  const patch: { lengthMm?: number; label?: string } = {}
+  if (spec.lengthMm != null) patch.lengthMm = spec.lengthMm
+  if (spec.label != null) patch.label = spec.label
+  project = ops.upsertSegment(project, harnessId, fromEnd, toEnd, patch)
+  ws.project = project
+
+  return ws.project.harnesses
+    .find((x) => x.id === harnessId)!
+    .segments.find((s) => s.fromEnd === fromEnd && s.toEnd === toEnd)!
 }
 
 export function addAccessory(
@@ -611,15 +609,15 @@ export function addAccessory(
   harnessId: string,
   acc: Omit<HarnessAccessory, 'id'>
 ): HarnessAccessory {
-  const h = getHarness(ws, harnessId)
-  const accessory: HarnessAccessory = { ...acc, id: nanoid() }
-  h.accessories = [...(h.accessories ?? []), accessory]
-  return accessory
+  getHarness(ws, harnessId)
+  const { project, id } = ops.addHarnessAccessory(ws.project, harnessId, acc)
+  ws.project = project
+  return { ...acc, id }
 }
 
 export function removeAccessory(ws: Workspace, harnessId: string, accId: string): void {
-  const h = getHarness(ws, harnessId)
-  h.accessories = (h.accessories ?? []).filter((a) => a.id !== accId)
+  getHarness(ws, harnessId)
+  ws.project = ops.removeHarnessAccessory(ws.project, harnessId, accId)
 }
 
 export function addSplice(
@@ -628,19 +626,16 @@ export function addSplice(
   wireIds: string[],
   name?: string
 ): HarnessSplice {
-  const h = getHarness(ws, harnessId)
-  const splice: HarnessSplice = {
-    id: nanoid(),
-    name: name ?? nextSpliceName(h.splices),
-    wireIds
-  }
-  h.splices = [...(h.splices ?? []), splice]
-  return splice
+  getHarness(ws, harnessId)
+  const { project, id } = ops.addSplice(ws.project, harnessId, wireIds, name)
+  ws.project = project
+  const h = ws.project.harnesses.find((x) => x.id === harnessId)!
+  return (h.splices ?? []).find((s) => s.id === id)!
 }
 
 export function removeSplice(ws: Workspace, harnessId: string, spliceId: string): void {
-  const h = getHarness(ws, harnessId)
-  h.splices = (h.splices ?? []).filter((s) => s.id !== spliceId)
+  getHarness(ws, harnessId)
+  ws.project = ops.removeSplice(ws.project, harnessId, spliceId)
 }
 
 /** Assign (or clear) the wire part used for a splice, feeding the BOM. */
@@ -651,10 +646,13 @@ export function assignSpliceWire(
   wirePartId?: string
 ): HarnessSplice {
   const h = getHarness(ws, harnessId)
-  const splice = (h.splices ?? []).find((s) => s.id === spliceId)
-  if (!splice) throw new Error(`Splice "${spliceId}" not found`)
-  splice.wirePartId = wirePartId
-  return splice
+  if (!(h.splices ?? []).some((s) => s.id === spliceId)) {
+    throw new Error(`Splice "${spliceId}" not found`)
+  }
+  ws.project = ops.assignSpliceWire(ws.project, harnessId, spliceId, wirePartId).project
+  return ws.project.harnesses
+    .find((x) => x.id === harnessId)!
+    .splices!.find((s) => s.id === spliceId)!
 }
 
 /** Collapse a harness into a reusable subassembly part stored in the library. */
@@ -689,7 +687,7 @@ export function insertSubassembly(
   if (!result.harness) {
     throw new Error('No placed devices match the subassembly ports')
   }
-  ws.project.harnesses.push(result.harness)
+  ws.project = ops.insertHarness(ws.project, result.harness)
   return { harness: result.harness, matched: result.matched, missing: result.missing }
 }
 
@@ -737,9 +735,9 @@ export function importWireVizDoc(
 }
 
 export function createRevision(ws: Workspace, label: string, description?: string) {
-  const rev = makeRevision(ws.project, label, description)
-  ws.project.revisions = [...(ws.project.revisions ?? []), rev]
-  return rev
+  const { project, revision } = ops.addRevision(ws.project, label, description)
+  ws.project = project
+  return revision
 }
 
 export function listRevisions(ws: Workspace) {
@@ -758,7 +756,7 @@ export function diffRevision(ws: Workspace, revisionId: string): string[] {
 }
 
 export function restoreRevision(ws: Workspace, revisionId: string): void {
-  ws.project = restoreRevisionFn(ws.project, revisionId)
+  ws.project = ops.restoreRevision(ws.project, revisionId)
 }
 
 // ---------------------------------------------------------------------------
