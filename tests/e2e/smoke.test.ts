@@ -151,6 +151,10 @@ describe.skipIf(!isE2E)('WireWeaver smoke test (E2E)', { timeout: 20_000 }, () =
     await sleep(300)
     await h.clickText('Library Manager')
     await sleep(600)
+    // The manager's list is virtualised; on a small screen (macOS CI) the
+    // harness section can be below the rendered rows, so search for it.
+    await page.locator('[aria-label="Library Manager"] input[aria-label="Search the library"]').fill('CAN Bus')
+    await sleep(300)
     await page.locator('[aria-label="Library Manager"] >> text=CAN Bus').first().click()
     await sleep(300)
     await h.clickText('Open harness editor')
