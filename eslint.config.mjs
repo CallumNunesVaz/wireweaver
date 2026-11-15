@@ -19,7 +19,7 @@ export default tseslint.config(
     }
   },
   {
-    files: ['electron/**/*.ts', 'scripts/**/*.ts', 'tests/**/*.ts', '*.config.{js,ts}', '.claude/**/*.mjs'],
+    files: ['electron/**/*.ts', 'scripts/**/*.ts', 'tests/**/*.ts', '*.config.{js,ts,mts}', '.claude/**/*.mjs'],
     languageOptions: { globals: globals.node }
   },
   {
