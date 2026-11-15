@@ -20,7 +20,7 @@
     "package:linux": "electron-vite build && electron-builder --linux",
     "package:mac": "electron-vite build && electron-builder --mac",
     "lint": "eslint .",
-    "test:e2e": "WW_E2E=1 vitest run tests/smoke.test.ts"
+    "test:e2e": "WW_E2E=1 vitest run tests/e2e --no-file-parallelism"
   },
   "dependencies": {
     "@xyflow/react": "^12.3.5",

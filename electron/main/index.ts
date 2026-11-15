@@ -15,6 +15,7 @@ import { promises as fs, rmSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { applyChanges, loadLibrary, loadParts, writeFileAtomic } from './libraryStorage'
+import { showOpenDialog, showSaveDialog } from './testDialogs'
 import type {
   IpcArgs,
   IpcChannel,
@@ -74,6 +75,10 @@ const imagesDir = () => join(libraryDir(), 'images')
 
 /** Bundled starter packs (repo data/ in dev, resources in prod). */
 function packsDir(): string {
+  const override = process.env['WW_PACKS_DIR']
+  // Test-only override, guarded exactly like the dialog seam: never honoured in
+  // a packaged build.
+  if (isDev && process.env['WW_E2E'] === '1' && override) return override
   return isDev ? join(app.getAppPath(), 'data') : join(process.resourcesPath, 'data')
 }
 
@@ -472,7 +477,7 @@ async function registerIpc(): Promise<void> {
   })
 
   handle('library:export', async (_e, data) => {
-    const res = await dialog.showSaveDialog(mainWindow!, {
+    const res = await showSaveDialog(mainWindow!, {
       title: 'Export Library',
       defaultPath: 'wireweaver-library.wwlib',
       filters: [{ name: 'WireWeaver Library', extensions: ['wwlib'] }]
@@ -483,7 +488,7 @@ async function registerIpc(): Promise<void> {
   })
 
   handle('library:import', async () => {
-    const res = await dialog.showOpenDialog(mainWindow!, {
+    const res = await showOpenDialog(mainWindow!, {
       title: 'Import Library',
       properties: ['openFile'],
       filters: [{ name: 'WireWeaver Library', extensions: ['wwlib'] }]
@@ -529,7 +534,7 @@ async function registerIpc(): Promise<void> {
     if (args?.path) {
       target = requireGrantedFile(args.path)
     } else {
-      const res = await dialog.showSaveDialog(mainWindow!, {
+      const res = await showSaveDialog(mainWindow!, {
         title: 'Save WireWeaver Project',
         defaultPath: 'project.wwv',
         filters: [{ name: 'WireWeaver Project', extensions: ['wwv'] }]
@@ -542,7 +547,7 @@ async function registerIpc(): Promise<void> {
   })
 
   handle('project:open', async () => {
-    const res = await dialog.showOpenDialog(mainWindow!, {
+    const res = await showOpenDialog(mainWindow!, {
       title: 'Open WireWeaver Project',
       properties: ['openFile'],
       filters: [{ name: 'WireWeaver Project', extensions: ['wwv'] }]
@@ -591,7 +596,7 @@ async function registerIpc(): Promise<void> {
     if (!args || !isString(args.content) || !isString(args.defaultName)) {
       throw new Error('Invalid export payload')
     }
-    const res = await dialog.showSaveDialog(mainWindow!, {
+    const res = await showSaveDialog(mainWindow!, {
       title: 'Export',
       defaultPath: basename(args.defaultName),
       filters: [{ name: String(args.filterName), extensions: (args.extensions ?? []).map(String) }]
@@ -602,7 +607,7 @@ async function registerIpc(): Promise<void> {
   })
 
   handle('file:readText', async (_e, args) => {
-    const res = await dialog.showOpenDialog(mainWindow!, {
+    const res = await showOpenDialog(mainWindow!, {
       title: 'Import',
       properties: ['openFile'],
       filters: [{ name: String(args?.filterName), extensions: (args?.extensions ?? []).map(String) }]
@@ -616,7 +621,7 @@ async function registerIpc(): Promise<void> {
   // from a private temp directory.
   handle('report:exportPdf', async (_e, args) => {
     if (!args || !isString(args.html)) throw new Error('Invalid report payload')
-    const res = await dialog.showSaveDialog(mainWindow!, {
+    const res = await showSaveDialog(mainWindow!, {
       title: 'Export PDF Report',
       defaultPath: basename(String(args.defaultName)),
       filters: [{ name: 'PDF', extensions: ['pdf'] }]
@@ -648,7 +653,7 @@ async function registerIpc(): Promise<void> {
   })
 
   handle('library:choosePath', async () => {
-    const res = await dialog.showOpenDialog(mainWindow!, {
+    const res = await showOpenDialog(mainWindow!, {
       title: 'Choose library database folder',
       properties: ['openDirectory', 'createDirectory']
     })

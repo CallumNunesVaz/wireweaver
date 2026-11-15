@@ -24,7 +24,7 @@ export default tseslint.config(
   },
   {
     // page.evaluate() bodies run in the browser.
-    files: ['.claude/**/*.mjs', 'tests/smoke.test.ts'],
+    files: ['.claude/**/*.mjs', 'tests/e2e/**/*.ts'],
     languageOptions: { globals: { ...globals.node, ...globals.browser } }
   },
   {

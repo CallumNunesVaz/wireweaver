@@ -69,7 +69,7 @@ describe.skipIf(!isE2E)('WireWeaver smoke test (E2E)', { timeout: 20_000 }, () =
     writeFileSync(projectPath, JSON.stringify(PROJECT))
     process.env['WW_CONFIG_DIR'] = join(dir, 'config')
     process.env['SCREENSHOT_DIR'] = join(dir, 'shots')
-    const driver = await import('../.claude/skills/run-desktop/driver.mjs')
+    const driver = await import('../../.claude/skills/run-desktop/driver.mjs')
     const res = await driver.launch({ recent: [{ name: 'Smoke Test', path: projectPath }] })
     app = res.app
     page = res.page
@@ -83,7 +83,7 @@ describe.skipIf(!isE2E)('WireWeaver smoke test (E2E)', { timeout: 20_000 }, () =
 
   afterAll(async () => {
     if (app) {
-      const { closeApp } = await import('../.claude/skills/run-desktop/driver.mjs')
+      const { closeApp } = await import('../../.claude/skills/run-desktop/driver.mjs')
       await closeApp(app, page)
     }
     if (dir) rmSync(dir, { recursive: true, force: true })

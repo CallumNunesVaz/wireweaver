@@ -29,6 +29,20 @@ const CONFIG_DIR = process.env.WW_CONFIG_DIR || '/tmp/ww-uitest-config'
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 /**
+ * Queue an answer for the test-only dialog seam (electron/main/testDialogs.ts).
+ * Only the next native Open/Save dialog is affected; answers are consumed FIFO.
+ * Pass `{ filePaths: ['/abs/path'] }` to make the dialog return that path, or
+ * `{ canceled: true }` to cancel it. No-op for a packaged app (the seam is
+ * guarded by WW_E2E=1 and `!app.isPackaged`).
+ */
+export async function queueDialog(app, result) {
+  await app.evaluate((_electron, r) => {
+    globalThis.__wwTestDialogs = globalThis.__wwTestDialogs || []
+    globalThis.__wwTestDialogs.push(r)
+  }, result)
+}
+
+/**
  * Launch the app with an isolated userData dir (never touches the real
  * library). options.recent pre-seeds the Recent-projects menu — the only
  * dialog-free way to open a .wwv project file.
