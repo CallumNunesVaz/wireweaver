@@ -6,7 +6,12 @@ export function createRevision(
   label: string,
   description?: string
 ): ProjectRevision {
-  const { revisions: _revisions, ...rest } = project
+  const {
+    revisions: _revisions,
+    partSnapshots: _partSnapshots,
+    templateSnapshots: _templateSnapshots,
+    ...rest
+  } = project
   return {
     id: nanoid(),
     timestamp: Date.now(),
@@ -16,7 +21,7 @@ export function createRevision(
   }
 }
 
-type ProjectLike = Omit<Project, 'revisions'>
+type ProjectLike = Omit<Project, 'revisions' | 'partSnapshots' | 'templateSnapshots'>
 
 export function diffRevisions(a: ProjectLike, b: ProjectLike): string[] {
   const lines: string[] = []
@@ -65,6 +70,8 @@ export function restoreRevision(
   return {
     ...rev.project,
     id: project.id,
+    partSnapshots: project.partSnapshots,
+    templateSnapshots: project.templateSnapshots,
     revisions: project.revisions
   }
 }

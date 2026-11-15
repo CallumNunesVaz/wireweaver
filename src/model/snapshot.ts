@@ -3,8 +3,11 @@ import type { Part, PinoutTemplate, Project } from './types'
 /**
  * Return a copy of the project with partSnapshots/templateSnapshots filled from
  * the library, covering everything the project references (devices, their port
- * templates, those templates' connectors, and assigned wire parts). Written on
- * every save so a .wwv opens on a machine with a different library.
+ * templates, those templates' connectors, and assigned wire parts). Revisions
+ * no longer carry their own snapshots, so the top-level maps also cover every
+ * part/template referenced by any revision — restoring an old revision still
+ * resolves. Written on every save so a .wwv opens on a machine with a
+ * different library.
  */
 export function withSnapshots(
   project: Project,
@@ -33,12 +36,17 @@ export function withSnapshots(
     addPart(t.connectorPartId)
   }
 
-  for (const inst of project.deviceInstances) addPart(inst.partId)
-  for (const h of project.harnesses) {
-    for (const w of h.wires) addPart(w.wirePartId)
-    for (const a of h.accessories ?? []) addPart(a.partId)
-    for (const s of h.splices ?? []) addPart(s.wirePartId)
+  const collect = (p: Pick<Project, 'deviceInstances' | 'harnesses'>): void => {
+    for (const inst of p.deviceInstances) addPart(inst.partId)
+    for (const h of p.harnesses) {
+      for (const w of h.wires) addPart(w.wirePartId)
+      for (const a of h.accessories ?? []) addPart(a.partId)
+      for (const s of h.splices ?? []) addPart(s.wirePartId)
+    }
   }
+
+  collect(project)
+  for (const rev of project.revisions ?? []) collect(rev.project)
 
   return { ...project, partSnapshots, templateSnapshots }
 }

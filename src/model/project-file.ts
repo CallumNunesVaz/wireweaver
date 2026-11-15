@@ -19,8 +19,10 @@ import type {
  * 1 — unversioned files from before versioning (two-ended harnesses with
  *     `a`/`b` endpoints are migrated).
  * 2 — explicit `schemaVersion`, multi-endpoint harnesses.
+ * 3 — revisions no longer carry their own part/template snapshots; the
+ *     top-level snapshots cover every revision.
  */
-export const PROJECT_SCHEMA_VERSION = 2
+export const PROJECT_SCHEMA_VERSION = 3
 export const LIBRARY_SCHEMA_VERSION = 1
 
 export class FileFormatError extends Error {
@@ -115,20 +117,40 @@ export function parseProjectFile(data: unknown): Project {
   if (!Array.isArray(data.deviceInstances) && !Array.isArray(data.harnesses)) {
     throw new FileFormatError('This file is not a WireWeaver project (no devices or harnesses).')
   }
+  const topPartSnapshots = isObj(data.partSnapshots)
+    ? (data.partSnapshots as Record<string, Part>)
+    : {}
+  const topTemplateSnapshots = isObj(data.templateSnapshots)
+    ? (data.templateSnapshots as Record<string, PinoutTemplate>)
+    : {}
+
+  // v1/v2 files stored a copy of the snapshot maps inside each revision. Hoist
+  // those entries to the top level (top-level wins on id conflicts) and drop
+  // them from the revision, so they are stored once and shared by all.
+  const hoistedParts: Record<string, Part> = {}
+  const hoistedTemplates: Record<string, PinoutTemplate> = {}
   const revisions = arr(data.revisions)
     .filter(isObj)
     .filter((r) => isObj(r.project))
-    .map((r) => ({
-      id: str(r.id) || nanoid(),
-      timestamp: num(r.timestamp, Date.now()),
-      label: str(r.label, 'Revision'),
-      description: typeof r.description === 'string' ? r.description : undefined,
-      project: parseProjectFile({ ...(r.project as Obj), revisions: [] }) as Project
-    }))
-    .map(({ project, ...rest }) => {
-      const { revisions: _drop, ...p } = project
+    .map((r) => {
+      const parsed = parseProjectFile({ ...(r.project as Obj), revisions: [] }) as Project
+      for (const [id, p] of Object.entries(parsed.partSnapshots ?? {})) {
+        if (!(id in hoistedParts)) hoistedParts[id] = p
+      }
+      for (const [id, t] of Object.entries(parsed.templateSnapshots ?? {})) {
+        if (!(id in hoistedTemplates)) hoistedTemplates[id] = t
+      }
+      const { revisions: _drop, partSnapshots: _p, templateSnapshots: _t, ...project } = parsed
       void _drop
-      return { ...rest, project: p }
+      void _p
+      void _t
+      return {
+        id: str(r.id) || nanoid(),
+        timestamp: num(r.timestamp, Date.now()),
+        label: str(r.label, 'Revision'),
+        description: typeof r.description === 'string' ? r.description : undefined,
+        project
+      }
     })
   return {
     id: str(data.id) || nanoid(),
@@ -139,10 +161,8 @@ export function parseProjectFile(data: unknown): Project {
     harnesses: arr(data.harnesses)
       .map(normalizeHarness)
       .filter((h): h is Harness => h !== null),
-    partSnapshots: isObj(data.partSnapshots) ? (data.partSnapshots as Record<string, Part>) : {},
-    templateSnapshots: isObj(data.templateSnapshots)
-      ? (data.templateSnapshots as Record<string, PinoutTemplate>)
-      : {},
+    partSnapshots: { ...hoistedParts, ...topPartSnapshots },
+    templateSnapshots: { ...hoistedTemplates, ...topTemplateSnapshots },
     revisions,
     revision: typeof data.revision === 'string' ? data.revision : undefined,
     author: typeof data.author === 'string' ? data.author : undefined,
