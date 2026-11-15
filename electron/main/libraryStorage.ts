@@ -92,6 +92,23 @@ function isRecord(v: unknown): v is { id: string } & Record<string, unknown> {
   )
 }
 
+/** The record's `updatedAt`, if it carries a numeric one. */
+function updatedAtOf(v: unknown): number | undefined {
+  if (!isRecord(v)) return undefined
+  const u = (v as { updatedAt?: unknown }).updatedAt
+  return typeof u === 'number' ? u : undefined
+}
+
+/** Whether a record directory already holds any `.json` record files. */
+async function dirHasRecords(dir: string): Promise<boolean> {
+  try {
+    const entries = await fs.readdir(dir)
+    return entries.some((e) => e.endsWith('.json'))
+  } catch {
+    return false
+  }
+}
+
 /** Move a damaged file aside so it is preserved but no longer loaded/saved. */
 async function moveAside(file: string, kind: 'corrupt' | 'migrated'): Promise<string> {
   const dest = `${file}.${kind}-${stamp()}`
@@ -140,30 +157,74 @@ async function loadRecords(
  * Split a legacy whole-file store into per-record files, then rename the
  * legacy file aside (never deleted). Corrupt or unexpected legacy content is
  * preserved as `*.corrupt-<timestamp>` and reported.
+ *
+ * When per-record files already exist (a newer build migrated, an older build
+ * then wrote a fresh legacy file, and the user came back), this becomes a
+ * merge: a legacy record only overwrites its per-record file when its
+ * `updatedAt` is strictly newer (records without `updatedAt` never overwrite
+ * an existing record). Missing records are added — the older build may
+ * legitimately have created them. Deletions made in the newer build cannot be
+ * told apart from additions made in the older build, so we prefer keeping data.
  */
-async function migrateLegacyFile(legacy: string, targetDir: string, label: string): Promise<string[]> {
+interface LegacyMigration {
+  errors: string[]
+  merged: number
+  skipped: number
+  added: number
+  /** True when per-record files already existed before this migration. */
+  hadExisting: boolean
+}
+
+async function migrateLegacyFile(legacy: string, targetDir: string, label: string): Promise<LegacyMigration> {
   const errors: string[] = []
+  const hadExisting = await dirHasRecords(targetDir)
   const r = await readJsonFile<unknown>(legacy)
   if (!r.ok) {
     const kept = await moveAside(legacy, 'corrupt')
     errors.push(`${label}: ${r.error} Moved aside to ${kept}.`)
-    return errors
+    return { errors, merged: 0, skipped: 0, added: 0, hadExisting }
   }
   if (!Array.isArray(r.data)) {
     const kept = await moveAside(legacy, 'corrupt')
     errors.push(`${label}: unexpected content. Moved aside to ${kept}.`)
-    return errors
+    return { errors, merged: 0, skipped: 0, added: 0, hadExisting }
   }
   await fs.mkdir(targetDir, { recursive: true })
+  let merged = 0
+  let skipped = 0
+  let added = 0
   for (const item of r.data) {
     if (!isRecord(item)) {
       errors.push(`${label}: skipped an entry without a valid id.`)
       continue
     }
-    await writeJsonAtomic(join(targetDir, `${recordKey(item.id)}.json`), item)
+    const file = join(targetDir, `${recordKey(item.id)}.json`)
+    const existing = await readJsonFile<unknown>(file)
+    if (!existing.ok) {
+      if (existing.missing) {
+        await writeJsonAtomic(file, item)
+        added++
+      } else {
+        // Existing file is unreadable/corrupt: leave it for loadRecords to
+        // quarantine rather than overwrite it with possibly-stale legacy data.
+        skipped++
+      }
+    } else if (isRecord(existing.data)) {
+      const legacyTs = updatedAtOf(item)
+      const existingTs = updatedAtOf(existing.data)
+      if (legacyTs !== undefined && (existingTs === undefined || legacyTs > existingTs)) {
+        await writeJsonAtomic(file, item)
+        merged++
+      } else {
+        skipped++
+      }
+    } else {
+      // Existing file holds unexpected content: leave it for loadRecords.
+      skipped++
+    }
   }
   await fs.rename(legacy, `${legacy}.migrated-${stamp()}`)
-  return errors
+  return { errors, merged, skipped, added, hadExisting }
 }
 
 /** Load the whole library, migrating the legacy single-file layout once. */
@@ -181,11 +242,27 @@ export async function loadLibrary(dir: string): Promise<LibraryLoadResult> {
   ])
 
   const problems: string[] = []
+  let merged = 0
+  let skipped = 0
+  let added = 0
+  let reMigrated = false
   // Migrate each legacy file once. Because a successful migration renames the
   // legacy file away, re-running after a partial failure is idempotent.
-  if (legacyPartsExists) problems.push(...(await migrateLegacyFile(legacyParts, partsDir, 'parts.json')))
+  if (legacyPartsExists) {
+    const m = await migrateLegacyFile(legacyParts, partsDir, 'parts.json')
+    problems.push(...m.errors)
+    merged += m.merged
+    skipped += m.skipped
+    added += m.added
+    reMigrated = reMigrated || m.hadExisting
+  }
   if (legacyTemplatesExists) {
-    problems.push(...(await migrateLegacyFile(legacyTemplates, templatesDir, 'pinout-templates.json')))
+    const m = await migrateLegacyFile(legacyTemplates, templatesDir, 'pinout-templates.json')
+    problems.push(...m.errors)
+    merged += m.merged
+    skipped += m.skipped
+    added += m.added
+    reMigrated = reMigrated || m.hadExisting
   }
 
   const parts = await loadRecords(partsDir, 'parts')
@@ -195,10 +272,23 @@ export async function loadLibrary(dir: string): Promise<LibraryLoadResult> {
   // A genuinely fresh library has no records and no legacy files.
   const isNew = !legacyPartsExists && !legacyTemplatesExists && parts.records.length === 0 && templates.records.length === 0
 
+  let notice: string | undefined
+  if (reMigrated && (merged || skipped || added)) {
+    const bits: string[] = []
+    if (added) bits.push(`${added} record${added === 1 ? '' : 's'} added`)
+    if (merged) bits.push(`${merged} record${merged === 1 ? '' : 's'} updated`)
+    if (skipped) bits.push(`${skipped} record${skipped === 1 ? '' : 's'} kept (newer edits here)`)
+    notice =
+      `An older WireWeaver wrote to this library: ${bits.join(', ')}. ` +
+      "Deletions made in this version can't be told apart from additions made in " +
+      'the older version, so deleted records may have been restored.'
+  }
+
   return {
     parts: parts.records as LibraryLoadResult['parts'],
     templates: templates.records as LibraryLoadResult['templates'],
     isNew,
+    notice,
     error: problems.length ? problems.join('\n') : undefined
   }
 }

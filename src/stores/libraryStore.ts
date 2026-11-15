@@ -181,6 +181,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     }
     const parts = (res.parts ?? []).filter(isPartLike)
     const templates = (res.templates ?? []).filter(isTemplateLike)
+    if (res.notice) toast(res.notice)
     if (res.isNew && parts.length === 0 && templates.length === 0) {
       const seed = seedLibrary()
       set({ parts: seed.parts, templates: seed.templates, libraryPath: libPath, loaded: true, loadError: null })

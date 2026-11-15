@@ -187,7 +187,13 @@ export interface ProjectRevision {
   timestamp: number
   label: string
   description?: string
-  project: Omit<Project, 'revisions'>
+  /**
+   * The project as it was when the revision was snapshotted, without the
+   * revision list or the (top-level) snapshot maps. Snapshot maps are stored
+   * once at the project's top level and shared by every revision so a long
+   * history does not duplicate them (see `withSnapshots`).
+   */
+  project: Omit<Project, 'revisions' | 'partSnapshots' | 'templateSnapshots'>
 }
 
 export interface Project {

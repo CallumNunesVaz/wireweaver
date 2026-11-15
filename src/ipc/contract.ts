@@ -17,6 +17,8 @@ export interface LibraryLoadResult {
   isNew: boolean
   /** Present when a library file exists but could not be read. */
   error?: string
+  /** Informational note (e.g. a legacy library was merged back in). */
+  notice?: string
 }
 
 /**
