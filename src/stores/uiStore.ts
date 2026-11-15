@@ -31,6 +31,8 @@ interface UiState {
   partEditor: PartEditorTarget | null
   templateEditorId: string | null | undefined // undefined = closed, null = new, string = edit
   harnessEditorId: string | null
+  /** Device instance the "Connect ports…" dialog is opened for. */
+  connectPortsInstanceId: string | null
   libraryManagerOpen: boolean
   reportsOpen: boolean
   drcOpen: boolean
@@ -63,6 +65,8 @@ interface UiState {
   closeTemplateEditor: () => void
   openHarnessEditor: (id: string) => void
   closeHarnessEditor: () => void
+  openConnectPorts: (id: string) => void
+  closeConnectPorts: () => void
   toggleLibraryManager: () => void
   toggleReports: () => void
   toggleDrc: () => void
@@ -89,6 +93,7 @@ export const useUiStore = create<UiState>((set) => ({
   partEditor: null,
   templateEditorId: undefined,
   harnessEditorId: null,
+  connectPortsInstanceId: null,
   libraryManagerOpen: false,
   reportsOpen: false,
   drcOpen: false,
@@ -125,6 +130,8 @@ export const useUiStore = create<UiState>((set) => ({
   closeTemplateEditor: () => set({ templateEditorId: undefined }),
   openHarnessEditor: (harnessEditorId) => set({ harnessEditorId }),
   closeHarnessEditor: () => set({ harnessEditorId: null }),
+  openConnectPorts: (connectPortsInstanceId) => set({ connectPortsInstanceId }),
+  closeConnectPorts: () => set({ connectPortsInstanceId: null }),
   toggleLibraryManager: () =>
     set((st) => ({ libraryManagerOpen: !st.libraryManagerOpen })),
   toggleReports: () => set((st) => ({ reportsOpen: !st.reportsOpen })),

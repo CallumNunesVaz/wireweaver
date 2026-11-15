@@ -29,6 +29,7 @@ import { useRafNodeChanges } from '../shared/useRafNodeChanges'
 import { useProjectStore, coalesceUndo } from '../stores/projectStore'
 import { useUiStore } from '../stores/uiStore'
 import { validateHarness, type HarnessValidation } from '../model/derivation'
+import { planConnection } from '../model/connection'
 import { isDevice, type DeviceInstance, type HarnessEndpoint } from '../model/types'
 
 const nodeTypes: NodeTypes = { device: DeviceNode }
@@ -181,26 +182,23 @@ export function AssemblyView() {
       const ep2: HarnessEndpoint = { deviceInstanceId: c.target, portId: targetPortId }
 
       const st = useProjectStore.getState()
-      const existing1 = st.findHarnessByEndpoint(ep1.deviceInstanceId, ep1.portId)
-      const existing2 = st.findHarnessByEndpoint(ep2.deviceInstanceId, ep2.portId)
-
-      // A port belongs to at most one harness: joining two existing harnesses
-      // would put ports in both, so refuse instead of silently merging.
-      if (existing1 && existing2) {
-        if (existing1 !== existing2) {
-          toast('Both ports already belong to different harnesses.', 'error')
+      const plan = planConnection(st.project, ep1, ep2)
+      switch (plan.kind) {
+        case 'create': {
+          const id = st.addHarness([ep1, ep2])
+          if (id) select({ type: 'harness', id })
+          break
         }
-        return
+        case 'join':
+          st.addEndpointToHarness(plan.harnessId, plan.endpoint)
+          select({ type: 'harness', id: plan.harnessId })
+          break
+        case 'error':
+          toast(plan.message, 'error')
+          break
+        case 'noop':
+          break
       }
-      const existingId = existing1 ?? existing2
-      if (existingId) {
-        st.addEndpointToHarness(existingId, existing1 ? ep2 : ep1)
-        select({ type: 'harness', id: existingId })
-        return
-      }
-
-      const id = st.addHarness([ep1, ep2])
-      if (id) select({ type: 'harness', id })
     },
     [select]
   )

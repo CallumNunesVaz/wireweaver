@@ -28,23 +28,25 @@ import {
   Eye,
   Link2,
   Pencil,
-  Trash2
+  Trash2,
+  Plus
 } from 'lucide-react'
 import { PinColumnNode, type PinColumnData } from './PinColumnNode'
 import { TwistedPairEdge } from './TwistedPairEdge'
 import { StripedWireEdge, type StripedWireData } from './StripedWireEdge'
 import { SpliceNode, type SpliceNodeData } from './SpliceNode'
 import { WireInspector, WirePartCard, isStripedColor, matchesWireQuery } from './WirePanels'
+import { AddWireDialog } from './AddWireDialog'
 import { useEffectiveLibrary } from '../stores/effectiveLibrary'
 import { useProjectStore } from '../stores/projectStore'
 import { useUiStore } from '../stores/uiStore'
 import { resolveEndpoint, validateHarness, type ResolvedEndpoint } from '../model/derivation'
-import { assignWirePart, planAutoWire, planCableDeploy } from '../model/wiring'
+import { assignWirePart, planAutoWire, planCableDeploy, isValidWireConnection, wiredPositionsByEnd } from '../model/wiring'
 import { endLabel, type HarnessWire, type WirePart } from '../model/types'
 import { toast } from '../shared/toast'
 import { ContextMenu, type CtxItem } from '../shared/ContextMenu'
 import { confirmDialog } from '../shared/dialogs'
-import { useOverlay } from '../shared/overlay'
+import { isTextTarget, isTopWorkspace, topOverlay, useOverlayEntry } from '../shared/overlay'
 import { useRafNodeChanges } from '../shared/useRafNodeChanges'
 
 const nodeTypes: NodeTypes = { pincol: PinColumnNode, splice: SpliceNode }
@@ -92,7 +94,7 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
   const assignSpliceWire = useProjectStore((s) => s.assignSpliceWire)
   const { lib, wireParts: allWireParts } = useEffectiveLibrary()
 
-  const z = useOverlay(close, { kind: 'workspace', allowsUndo: true })
+  const { z, id: editorId } = useOverlayEntry(close, { kind: 'workspace', allowsUndo: true })
 
   const [selectedWireIds, setSelectedWireIds] = useState<string[]>([])
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -101,6 +103,7 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
   const [editingSegment, setEditingSegment] = useState<string | null>(null)
   const [wireMenu, setWireMenu] = useState<{ x: number; y: number } | null>(null)
   const [hoverSpliceId, setHoverSpliceId] = useState<string | null>(null)
+  const [addWireOpen, setAddWireOpen] = useState(false)
 
   const canvasRef = useRef<HTMLDivElement>(null)
 
@@ -145,6 +148,40 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
     [harness, lib, instances]
   )
 
+  // Endpoint choices for the "Add wire…" dialog (label + signal per pin).
+  const endpointChoices = useMemo(
+    () =>
+      endpoints.map((_, i) => {
+        const label = endLabel(i)
+        const re = resolvedEndpoints[i]
+        return {
+          end: label,
+          title: re ? `${re.instance.label} · ${re.port.name}` : `End ${label.toUpperCase()}`,
+          pins: (re?.pins ?? []).map((p) => ({ position: p.position, signal: p.signal }))
+        }
+      }),
+    [endpoints, resolvedEndpoints]
+  )
+
+  // "W" opens the Add-wire dialog, but only while this editor (or its own
+  // docked wire panel) is the top overlay and focus is not in a text field.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return
+      const top = topOverlay()
+      if (!top) return
+      if (top.kind !== 'workspace' && top.kind !== 'popup') return
+      if (!isTopWorkspace(editorId)) return
+      if (isTextTarget(e.target)) return
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      if (e.key.toLowerCase() !== 'w') return
+      e.preventDefault()
+      setAddWireOpen(true)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [editorId])
+
   // Segments to offer length inputs for: every wired endpoint pair (star
   // wiring makes non-adjacent pairs like a–c normal), pairs that already
   // have a segment, and adjacent pairs as a starting default.
@@ -156,15 +193,10 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
     return [...pairs].sort().map((k) => k.split('~') as [string, string])
   }, [wires, harness?.segments, numEndpoints])
 
-  const wiredPositions = useMemo(() => {
-    const all: Record<string, Set<number>> = {}
-    for (let i = 0; i < numEndpoints; i++) all[endLabel(i)] = new Set<number>()
-    for (const w of wires) {
-      all[w.from.end]?.add(w.from.position)
-      all[w.to.end]?.add(w.to.position)
-    }
-    return all
-  }, [wires, numEndpoints])
+  const wiredPositions = useMemo(
+    () => wiredPositionsByEnd(wires, numEndpoints),
+    [wires, numEndpoints]
+  )
 
   const pinColors = useMemo(() => {
     const map: Record<string, string | undefined> = {}
@@ -305,18 +337,20 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
       const from = parseHandle(c.sourceHandle)
       const to = parseHandle(c.targetHandle)
       if (!from || !to) return false
-      if (from.end === to.end && from.position === to.position) return false
       const latest =
         useProjectStore.getState().project.harnesses.find((h) => h.id === harnessId)?.wires ?? []
-      const isWired = (end: string, position: number) =>
-        latest.some(
-          (w) =>
-            (w.from.end === end && w.from.position === position) ||
-            (w.to.end === end && w.to.position === position)
-        )
-      return !isWired(from.end, from.position) && !isWired(to.end, to.position)
+      return isValidWireConnection(latest, from, to)
     },
     [harnessId]
+  )
+
+  const addWire = useCallback(
+    (from: { end: string; position: number }, to: { end: string; position: number }) => {
+      const wire: HarnessWire = { id: nanoid(), from, to }
+      setWires(harnessId, [...wires, wire])
+      setSelectedWireIds([wire.id])
+    },
+    [wires, harnessId, setWires]
   )
 
   const onConnect = useCallback(
@@ -324,11 +358,9 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
       const from = parseHandle(c.sourceHandle)
       const to = parseHandle(c.targetHandle)
       if (!from || !to) return
-      const wire: HarnessWire = { id: nanoid(), from, to }
-      setWires(harnessId, [...wires, wire])
-      setSelectedWireIds([wire.id])
+      addWire(from, to)
     },
-    [wires, harnessId, setWires]
+    [addWire]
   )
 
   const onEdgesChange = useCallback(
@@ -598,6 +630,15 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
         )}
 
         <div className="flex flex-wrap items-center gap-1">
+          <button
+            className="ww-btn"
+            onClick={() => setAddWireOpen(true)}
+            disabled={numEndpoints < 2}
+            title="Add a wire by selecting pins (W)"
+            aria-label="Add wire"
+          >
+            <Plus size={15} /> Add wire
+          </button>
           <button className="ww-btn" onClick={autoWire} title="Wire pins with matching signal names">
             <Zap size={15} /> Auto-wire
           </button>
@@ -820,6 +861,19 @@ export function HarnessEditor({ harnessId }: { harnessId: string }) {
           )}
         </div>
       </div>
+
+      {addWireOpen && (
+        <AddWireDialog
+          harnessName={harness.name}
+          endpoints={endpointChoices}
+          wires={wires}
+          onAdd={(from, to) => {
+            addWire(from, to)
+            setAddWireOpen(false)
+          }}
+          onClose={() => setAddWireOpen(false)}
+        />
+      )}
     </div>
   )
 }

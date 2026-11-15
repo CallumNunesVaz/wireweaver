@@ -21,6 +21,8 @@ const SHORTCUTS: ShortcutRow[] = [
   { keys: ['Ctrl+D'], action: 'Duplicate selected device/harness' },
   { keys: ['Ctrl+L'], action: 'Library Manager' },
   { keys: ['F2'], action: 'Rename selected device/harness' },
+  { keys: ['C'], action: 'Connect ports (with a device selected)' },
+  { keys: ['W'], action: 'Add wire (in the Harness Editor)' },
   { keys: ['Delete', 'Backspace'], action: 'Delete selected' },
   { keys: ['Ctrl+click'], action: 'Add a device (or wire) to the selection' },
   { keys: ['Alt+drag'], action: 'Duplicate device while dragging' },

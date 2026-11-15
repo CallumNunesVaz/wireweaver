@@ -454,6 +454,8 @@ function ShortcutsSection() {
               ['Ctrl+D', 'Duplicate selected device/harness'],
               ['Ctrl+L', 'Library Manager'],
               ['F2', 'Rename selected'],
+              ['C', 'Connect ports (with a device selected)'],
+              ['W', 'Add wire (in the Harness Editor)'],
               ['Delete / Backspace', 'Delete selected'],
               ['Ctrl+click', 'Multi-select device on canvas'],
               ['Alt+drag', 'Duplicate device while dragging'],
