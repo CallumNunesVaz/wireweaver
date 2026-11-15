@@ -11,6 +11,7 @@ import {
 import { useProjectStore } from '../stores/projectStore'
 import { useUiStore } from '../stores/uiStore'
 import { useDrcIssues } from '../stores/effectiveLibrary'
+import { useDrcPending } from '../stores/drcScheduler'
 
 /**
  * Persistent design-rule-check side panel. Unlike a modal it stays open while
@@ -24,6 +25,7 @@ export function DrcPanel() {
   const setIndex = useUiStore((s) => s.setDrcIndex)
   const project = useProjectStore((s) => s.project)
   const issues = useDrcIssues()
+  const pending = useDrcPending()
 
   const errors = issues.filter((i) => i.severity === 'error').length
   const current = issues[Math.min(index, Math.max(0, issues.length - 1))]
@@ -59,6 +61,11 @@ export function DrcPanel() {
         <span className="text-warn">
           {issues.length - errors} warning{issues.length - errors === 1 ? '' : 's'}
         </span>
+        {pending && (
+          <span className="animate-pulse text-[11px] text-muted" aria-live="polite">
+            checking…
+          </span>
+        )}
         <div className="ml-auto flex items-center gap-1">
           <button
             className="ww-btn px-1.5 py-0.5"
