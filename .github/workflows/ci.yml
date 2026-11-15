@@ -21,5 +21,7 @@ jobs:
       - name: End-to-end smoke test
         run: |
           sudo apt-get update && sudo apt-get install -y xvfb
+          # npm ci does not always fetch Electron's binary; make sure it exists.
+          node node_modules/electron/install.js
           npm i --no-save playwright-core
           xvfb-run -a npm run test:e2e
