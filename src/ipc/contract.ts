@@ -19,6 +19,17 @@ export interface LibraryLoadResult {
   error?: string
 }
 
+/**
+ * A batch of library edits. Only the named records are written/removed on
+ * disk; records not mentioned are left untouched.
+ */
+export interface LibraryChanges {
+  upsertParts: Part[]
+  removePartIds: string[]
+  upsertTemplates: PinoutTemplate[]
+  removeTemplateIds: string[]
+}
+
 export interface FileReadResult<T = unknown> extends Cancelable {
   data?: T
   /** Human-readable reason the file could not be read. */
@@ -76,8 +87,7 @@ export type MenuCommand =
 /** Request/response channels: name → [args, result]. */
 export interface IpcChannels {
   'library:load': [[], LibraryLoadResult]
-  'library:saveParts': [[parts: Part[]], boolean]
-  'library:saveTemplates': [[templates: PinoutTemplate[]], boolean]
+  'library:applyChanges': [[changes: LibraryChanges], boolean]
   'library:export': [[data: { parts: Part[]; templates: PinoutTemplate[] }], Cancelable]
   'library:import': [[], FileReadResult]
   'library:getPath': [[], string]
@@ -130,8 +140,7 @@ export interface IpcEvents {
 export interface WwApi {
   library: {
     load: () => Promise<LibraryLoadResult>
-    saveParts: (parts: Part[]) => Promise<boolean>
-    saveTemplates: (templates: PinoutTemplate[]) => Promise<boolean>
+    applyChanges: (changes: LibraryChanges) => Promise<boolean>
     export: (data: { parts: Part[]; templates: PinoutTemplate[] }) => Promise<Cancelable>
     import: () => Promise<FileReadResult>
     getPath: () => Promise<string>

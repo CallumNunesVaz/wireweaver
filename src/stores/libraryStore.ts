@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Part, PinoutTemplate } from '../model/types'
+import type { LibraryChanges } from '../ipc/contract'
 import type { LibraryLike } from '../model/derivation'
 import { seedLibrary } from '../model/seed'
 import { toast } from '../shared/toast'
@@ -37,10 +38,10 @@ interface LibraryState {
   templates: PinoutTemplate[]
   libraryPath: string
   loaded: boolean
-  /** Set when a library file exists but could not be read. */
+  /** Set when library records could not be read; holds back writes. */
   loadError: string | null
   load: () => Promise<void>
-  /** After a load error: proceed with an empty library and resume saving. */
+  /** After a load error: keep the loaded (possibly partial) library and resume saving. */
   acceptEmptyLibrary: () => void
   upsertPart: (part: Part) => void
   removePart: (id: string) => void
@@ -56,25 +57,80 @@ interface LibraryState {
   relocateLibrary: (path: string) => Promise<void>
 }
 
-const persistParts = debounced(async (parts: Part[]) => {
-  try {
-    await window.ww?.library?.saveParts(parts)
-  } catch {
-    toast('Failed to save library parts to disk.', 'error')
-  }
-}, 500)
+// Dirty records and removals since the last flush. Kept out of the store state
+// so edits don't re-render; only the debounced writer reads them.
+const dirtyParts = new Map<string, Part>()
+const removedPartIds = new Set<string>()
+const dirtyTemplates = new Map<string, PinoutTemplate>()
+const removedTemplateIds = new Set<string>()
 
-const persistTemplates = debounced(async (templates: PinoutTemplate[]) => {
+function resetDirty(): void {
+  dirtyParts.clear()
+  removedPartIds.clear()
+  dirtyTemplates.clear()
+  removedTemplateIds.clear()
+}
+
+/** Snapshot the pending changes and clear them, ready for the next write. */
+function takeChanges(): LibraryChanges | null {
+  const upsertParts = [...dirtyParts.values()]
+  const upsertTemplates = [...dirtyTemplates.values()]
+  const removePartIdsArr = [...removedPartIds]
+  const removeTemplateIdsArr = [...removedTemplateIds]
+  if (
+    upsertParts.length === 0 &&
+    upsertTemplates.length === 0 &&
+    removePartIdsArr.length === 0 &&
+    removeTemplateIdsArr.length === 0
+  ) {
+    return null
+  }
+  dirtyParts.clear()
+  dirtyTemplates.clear()
+  removedPartIds.clear()
+  removedTemplateIds.clear()
+  return {
+    upsertParts,
+    removePartIds: removePartIdsArr,
+    upsertTemplates,
+    removeTemplateIds: removeTemplateIdsArr
+  }
+}
+
+/**
+ * Put changes from a failed write back in the queue, unless a newer edit to
+ * the same record has superseded them in the meantime, so they are retried
+ * rather than silently lost.
+ */
+function requeue(c: LibraryChanges): void {
+  for (const p of c.upsertParts) {
+    if (!dirtyParts.has(p.id) && !removedPartIds.has(p.id)) dirtyParts.set(p.id, p)
+  }
+  for (const id of c.removePartIds) {
+    if (!dirtyParts.has(id)) removedPartIds.add(id)
+  }
+  for (const t of c.upsertTemplates) {
+    if (!dirtyTemplates.has(t.id) && !removedTemplateIds.has(t.id)) dirtyTemplates.set(t.id, t)
+  }
+  for (const id of c.removeTemplateIds) {
+    if (!dirtyTemplates.has(id)) removedTemplateIds.add(id)
+  }
+}
+
+const persistChanges = debounced(async () => {
+  const changes = takeChanges()
+  if (!changes) return
   try {
-    await window.ww?.library?.saveTemplates(templates)
+    await window.ww?.library?.applyChanges(changes)
   } catch {
-    toast('Failed to save pinout templates to disk.', 'error')
+    requeue(changes)
+    toast('Library changes could not be saved to disk; they will be retried with your next edit.', 'error')
   }
 }, 500)
 
 /** Write any pending library edits now (before quit or a folder switch). */
 export async function flushLibraryWrites(): Promise<void> {
-  await Promise.all([persistParts.flush(), persistTemplates.flush()])
+  await persistChanges.flush()
 }
 
 if (typeof window !== 'undefined' && !(window as { __ww_persistFlush__?: boolean }).__ww_persistFlush__) {
@@ -102,11 +158,8 @@ function isTemplateLike(t: unknown): t is PinoutTemplate {
 type Get = () => { loadError: string | null }
 // While a load error is unresolved, writes would replace the user's real
 // library with whatever is in memory, so they are held back.
-function persistPartsGuarded(get: Get, parts: Part[]): void {
-  if (!get().loadError) persistParts.call(parts)
-}
-function persistTemplatesGuarded(get: Get, templates: PinoutTemplate[]): void {
-  if (!get().loadError) persistTemplates.call(templates)
+function persistGuarded(get: Get): void {
+  if (!get().loadError) persistChanges.call()
 }
 
 export const useLibraryStore = create<LibraryState>((set, get) => ({
@@ -117,6 +170,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   loadError: null,
 
   load: async () => {
+    resetDirty()
     const libPath = await window.ww?.library.getPath()
     const res = await window.ww?.library.load()
     if (!res) return
@@ -130,14 +184,18 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     if (res.isNew && parts.length === 0 && templates.length === 0) {
       const seed = seedLibrary()
       set({ parts: seed.parts, templates: seed.templates, libraryPath: libPath, loaded: true, loadError: null })
-      persistPartsGuarded(get, seed.parts)
-      persistTemplatesGuarded(get, seed.templates)
+      for (const p of seed.parts) dirtyParts.set(p.id, p)
+      for (const t of seed.templates) dirtyTemplates.set(t.id, t)
+      persistGuarded(get)
       return
     }
     set({ parts, templates, libraryPath: libPath, loaded: true, loadError: null })
   },
 
-  acceptEmptyLibrary: () => set({ loadError: null }),
+  acceptEmptyLibrary: () => {
+    set({ loadError: null })
+    persistGuarded(get)
+  },
 
   upsertPart: (part) => {
     const parts = get().parts.slice()
@@ -151,13 +209,17 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     if (i >= 0) parts[i] = stamped
     else parts.push(stamped)
     set({ parts })
-    persistPartsGuarded(get, parts)
+    dirtyParts.set(stamped.id, stamped)
+    removedPartIds.delete(stamped.id)
+    persistGuarded(get)
   },
 
   removePart: (id) => {
     const parts = get().parts.filter((p) => p.id !== id)
     set({ parts })
-    persistPartsGuarded(get, parts)
+    dirtyParts.delete(id)
+    removedPartIds.add(id)
+    persistGuarded(get)
   },
 
   upsertTemplate: (template) => {
@@ -166,13 +228,17 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     if (i >= 0) templates[i] = template
     else templates.push(template)
     set({ templates })
-    persistTemplatesGuarded(get, templates)
+    dirtyTemplates.set(template.id, template)
+    removedTemplateIds.delete(template.id)
+    persistGuarded(get)
   },
 
   removeTemplate: (id) => {
     const templates = get().templates.filter((t) => t.id !== id)
     set({ templates })
-    persistTemplatesGuarded(get, templates)
+    dirtyTemplates.delete(id)
+    removedTemplateIds.add(id)
+    persistGuarded(get)
   },
 
   mergeItems: (items) => {
@@ -204,13 +270,14 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     if (newParts.length) {
       const next = [...parts, ...newParts]
       set({ parts: next })
-      persistPartsGuarded(get, next)
+      for (const p of newParts) dirtyParts.set(p.id, p)
     }
     if (newTemplates.length) {
       const next = [...templates, ...newTemplates]
       set({ templates: next })
-      persistTemplatesGuarded(get, next)
+      for (const t of newTemplates) dirtyTemplates.set(t.id, t)
     }
+    if (newParts.length || newTemplates.length) persistGuarded(get)
     return result
   },
 

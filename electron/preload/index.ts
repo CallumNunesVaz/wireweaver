@@ -13,8 +13,7 @@ const EVENTS: ReadonlySet<string> = new Set<keyof IpcEvents>([
 const api: WwApi = {
   library: {
     load: () => invoke('library:load'),
-    saveParts: (parts) => invoke('library:saveParts', parts),
-    saveTemplates: (templates) => invoke('library:saveTemplates', templates),
+    applyChanges: (changes) => invoke('library:applyChanges', changes),
     export: (data) => invoke('library:export', data),
     import: () => invoke('library:import'),
     getPath: () => invoke('library:getPath'),
