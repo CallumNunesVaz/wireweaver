@@ -3,21 +3,11 @@
  * mouse-drag path (Assembly view), the "Connect ports…" dialog and the MCP /
  * programmatic API. Returns a plan the caller commits; it never mutates state.
  */
-import type { Harness, HarnessEndpoint, Project } from './types'
+import type { HarnessEndpoint, Project } from './types'
+import { findHarnessByEndpoint } from './ops'
 
-/** Find the harness id that contains this endpoint, if any. */
-export function findHarnessByEndpoint(
-  harnesses: Harness[],
-  deviceInstanceId: string,
-  portId: string
-): string | undefined {
-  for (const h of harnesses) {
-    for (const ep of h.endpoints) {
-      if (ep.deviceInstanceId === deviceInstanceId && ep.portId === portId) return h.id
-    }
-  }
-  return undefined
-}
+// One implementation, shared with the project ops layer.
+export { findHarnessByEndpoint }
 
 export type ConnectionPlan =
   /** Neither port is wired yet: create a fresh harness with both. */

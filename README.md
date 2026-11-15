@@ -167,6 +167,14 @@ WebP and GIF are accepted (no SVG), up to 20 MB.
   and menu registers here. Escape closes only the top-most overlay, z-order follows open
   order, dialogs trap and restore focus. Global shortcuts don't fire behind an overlay
   (except save and, in the Harness Editor, undo/redo) or while typing in a text field.
+- **One mutation layer** (`src/model/ops.ts`) — every project edit is a pure
+  `project → project` function used by both the app store and `api.ts`/MCP.
+- **Library storage** — one JSON file per part/template under the library folder
+  (`parts/`, `templates/`), written individually; older single-file libraries migrate
+  automatically on first launch (originals kept as `*.migrated-*`).
+- **Design-rule check** runs in a Web Worker for projects with 300+ wires.
+- **Keyboard-only editing** — `C` connects ports of the selected device, `W` adds a
+  wire in the Harness Editor.
 - **Effective library** (`src/stores/effectiveLibrary.ts`) — a project renders against
   your library with its own embedded snapshots filling any gaps, so projects from other
   machines or the MCP server display fully without importing anything first.
@@ -177,14 +185,8 @@ WebP and GIF are accepted (no SVG), up to 20 MB.
 
 - **Bundled content packs**: `data/` is gitignored, so the `.wwlib` packs must be
   regenerated (`scripts/import-*`) or committed before a packaged build ships them.
-- **Library storage** is one JSON file rewritten on each edit (~2 MB at 2,700 parts);
-  per-record storage (SQLite or one file per part) would make edits O(1).
 - **Fully self-contained projects** (snapshot-first, with an explicit "update from
   library") are not implemented; library edits still flow live into projects.
-- **Store ↔ API**: wiring logic and file formats are shared with `api.ts`, but
-  `projectStore` still has its own mutators rather than calling the API.
 - **Subassemblies** are saved reusable harnesses matched to placed devices by port id;
   true nested-assembly instantiation is not implemented.
-- **Build tooling**: Vite 5 / Vitest 2 / electron-vite 2 carry dev-only advisories; the
-  upgrade to Vite 8 / Vitest 4 / electron-vite 6 is a separate migration.
 - **FX conversion** is offered in the Reports modal; the BOM CSV still sums per currency.

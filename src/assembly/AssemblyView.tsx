@@ -574,6 +574,8 @@ export function AssemblyView() {
         onConnectEnd={() => setConnectSource(null)}
         connectionLineStyle={{ stroke: 'var(--color-accent)', strokeWidth: 2, strokeDasharray: '5 4', opacity: 0.8 }}
         connectionRadius={50}
+        // Large projects (100+ devices) must still fit on screen.
+        minZoom={0.05}
         fitView
         // This canvas stays mounted under full-screen overlays (Harness
         // Editor, Library Manager); never let Delete reach it from there.

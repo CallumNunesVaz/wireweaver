@@ -249,3 +249,17 @@ Verified with `npm run lint` (0 errors), `npm run typecheck`, `npm test` (228 pa
 - **Keyboard-only harness/wire creation**.
 - **Build-tool majors** (Vite 8, Vitest 4, electron-vite 6) for the remaining dev-only advisories.
 - **Bundled packs in git / CI release builds** (`data/` is still ignored).
+
+## 10. Follow-ups delegated to DeepSeek (15 Nov 2026)
+
+Four §9 follow-ups plus the toolchain upgrade were implemented by DeepSeek V4 Pro on separate branches, then reviewed, amended where needed, verified, and merged. Each has a review record in `docs/reviews/`.
+
+| Follow-up | Result |
+|---|---|
+| Store ↔ API duplication | Done — `src/model/ops.ts`; amended: API now rejects ports owned by another harness, no-op edits no longer mark the project dirty |
+| Per-record library storage | Done — one file per record, migration verified on a 2,698-part library; amended: failed writes are requeued, not lost |
+| DRC off the main thread | Done — Web Worker for 300+ wires; amended: shared result cache, worker kept for the session |
+| Keyboard-only harness/wire creation | Done — `C` / `W` dialogs; amended after keyboard-only testing: sensible preselection and focus |
+| Build-tool majors | Done — Vite 8, Vitest 4, electron-vite 6; `npm audit` 30 → 12 moderate (dev-only) |
+
+Still open, by choice: fully self-contained projects (a UX decision) and committing the `data/` packs.
