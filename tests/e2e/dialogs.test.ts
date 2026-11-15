@@ -142,7 +142,7 @@ describe.skipIf(!isE2E)('WireWeaver dialog seam (E2E)', { timeout: 30_000 }, () 
     expect(await dirtyDot()).toBe(true)
 
     await queueDialog(app, { filePaths: [savePath] })
-    await page.keyboard.press('Control+Shift+S')
+    await page.keyboard.press('ControlOrMeta+Shift+S')
     expect(await waitFor(() => existsSync(savePath))).toBe(true)
 
     const written = JSON.parse(readFileSync(savePath, 'utf8'))
@@ -153,7 +153,7 @@ describe.skipIf(!isE2E)('WireWeaver dialog seam (E2E)', { timeout: 30_000 }, () 
 
     await renameProject('My Test Project 2')
     expect(await dirtyDot()).toBe(true)
-    await page.keyboard.press('Control+s')
+    await page.keyboard.press('ControlOrMeta+s')
     await sleep(600)
 
     const rewritten = JSON.parse(readFileSync(savePath, 'utf8'))
@@ -191,7 +191,7 @@ describe.skipIf(!isE2E)('WireWeaver dialog seam (E2E)', { timeout: 30_000 }, () 
     expect(await dirtyDot()).toBe(true)
 
     await queueDialog(app, { canceled: true })
-    await page.keyboard.press('Control+Shift+S')
+    await page.keyboard.press('ControlOrMeta+Shift+S')
     await sleep(600)
 
     expect(await dirtyDot()).toBe(true)
@@ -205,7 +205,7 @@ describe.skipIf(!isE2E)('WireWeaver dialog seam (E2E)', { timeout: 30_000 }, () 
     const csvPath = join(dir, 'wiring.csv')
     const pdfPath = join(dir, 'report.pdf')
 
-    await page.keyboard.press('Control+r')
+    await page.keyboard.press('ControlOrMeta+r')
     await sleep(800)
 
     await queueDialog(app, { filePaths: [csvPath] })
@@ -223,7 +223,7 @@ describe.skipIf(!isE2E)('WireWeaver dialog seam (E2E)', { timeout: 30_000 }, () 
   })
 
   it('lists and installs the fixture starter pack, then reports nothing new', async () => {
-    await page.keyboard.press('Control+l')
+    await page.keyboard.press('ControlOrMeta+l')
     await sleep(800)
 
     await h.clickText('Starter packs')

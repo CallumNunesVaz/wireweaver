@@ -102,7 +102,7 @@ describe.skipIf(!isE2E)('WireWeaver smoke test (E2E)', { timeout: 20_000 }, () =
     expect(await crashed()).toBe(false)
     expect(await nodeCount()).toBe(2)
     await page.click('main .react-flow__pane', { position: { x: 20, y: 400 } })
-    await page.keyboard.press('Control+z')
+    await page.keyboard.press('ControlOrMeta+z')
     await sleep(500)
     expect(await nodeCount()).toBe(3)
   })
@@ -114,7 +114,7 @@ describe.skipIf(!isE2E)('WireWeaver smoke test (E2E)', { timeout: 20_000 }, () =
     await input.click()
     await page.keyboard.press('End')
     await page.keyboard.type('X')
-    await page.keyboard.press('Control+z')
+    await page.keyboard.press('ControlOrMeta+z')
     await sleep(300)
     expect(await nodeCount()).toBe(3)
   })
@@ -144,7 +144,7 @@ describe.skipIf(!isE2E)('WireWeaver smoke test (E2E)', { timeout: 20_000 }, () =
   })
 
   it('opens the harness editor on top of the Library Manager', async () => {
-    await page.keyboard.press('Control+l')
+    await page.keyboard.press('ControlOrMeta+l')
     await sleep(600)
     await page.locator('[aria-label="Library Manager"] >> text=CAN Bus').first().click()
     await sleep(300)
@@ -164,7 +164,7 @@ describe.skipIf(!isE2E)('WireWeaver smoke test (E2E)', { timeout: 20_000 }, () =
   })
 
   it('starts a new project over a populated canvas without crashing', async () => {
-    await page.keyboard.press('Control+n')
+    await page.keyboard.press('ControlOrMeta+n')
     await sleep(400)
     if (await hasText('Unsaved changes')) {
       await h.clickText("Don't save")
