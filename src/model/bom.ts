@@ -3,6 +3,8 @@ import type { Money, Project } from './types'
 import { csvCell } from './csv'
 import type { LibraryLike } from './derivation'
 import { resolveEndpoint } from './derivation'
+import { harnessCables } from './wiring'
+import { isWire } from './types'
 import { currencyDecimals, formatMoney } from './currency'
 
 export interface BomRow {
@@ -45,6 +47,10 @@ export function buildBom(project: Project, lib: LibraryLike): BomRow[] {
     c.qty += 1
     counts.set(partId, c)
   }
+  const conductorsOf = (partId: string): number => {
+    const p = lib.parts[partId]
+    return p && isWire(p) ? Math.max(1, p.conductors ?? 1) : 1
+  }
 
   // Devices from instances.
   for (const inst of project.deviceInstances) bump(inst.partId)
@@ -55,8 +61,12 @@ export function buildBom(project: Project, lib: LibraryLike): BomRow[] {
       const re = resolveEndpoint(lib, project.deviceInstances, ep)
       if (re?.connector) bump(re.connector.id)
     }
-    // Wire parts assigned to individual wires.
-    for (const w of h.wires) if (w.wirePartId) bump(w.wirePartId)
+    // Wire parts: single-conductor parts count per wire; a multi-conductor
+    // cable counts once however many of its conductors are wired.
+    for (const w of h.wires) {
+      if (w.wirePartId && conductorsOf(w.wirePartId) <= 1) bump(w.wirePartId)
+    }
+    for (const cable of harnessCables(h.wires, conductorsOf)) bump(cable.wirePartId)
 
     // Accessories (Feature 5)
     for (const acc of h.accessories ?? []) {

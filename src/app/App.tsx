@@ -3,7 +3,7 @@ import { ReactFlowProvider } from '@xyflow/react'
 import { AlertTriangle } from 'lucide-react'
 import { CommandPalette, type Command as PaletteCommand } from '../shared/CommandPalette'
 import { ErrorBoundary } from '../shared/ErrorBoundary'
-import { Toaster } from '../shared/toast'
+import { Toaster, toast } from '../shared/toast'
 import { DialogHost, promptDialog } from '../shared/dialogs'
 import { isTextTarget, topOverlay } from '../shared/overlay'
 import { LibraryPane } from '../library/LibraryPane'
@@ -97,7 +97,14 @@ async function renameSelection(): Promise<void> {
 function duplicateSelection(): void {
   const sel = useUiStore.getState().selection
   if (sel?.type === 'instance') useProjectStore.getState().duplicateInstance(sel.id)
-  else if (sel?.type === 'harness') useProjectStore.getState().duplicateHarness(sel.id)
+  else if (sel?.type === 'harness') {
+    // A copy would share the same device ports, which a port can't (one
+    // harness per port). Reuse wiring via a subassembly instead.
+    toast(
+      "A harness can't be duplicated onto the same ports. Save it as a subassembly (Inspector) and insert it between other devices.",
+      'info'
+    )
+  }
 }
 
 function focusLibrarySearch(): void {
@@ -117,9 +124,17 @@ function runMenuCommand(cmd: MenuCommand): void {
     case 'saveAs':
       return void saveProject(true)
     case 'undo':
-      return undo()
-    case 'redo':
-      return redo()
+    case 'redo': {
+      // Same rules as the keyboard shortcut: undo typing in a text field, and
+      // leave the project alone behind an overlay that doesn't allow undo.
+      if (isTextTarget(document.activeElement)) {
+        document.execCommand(cmd)
+        return
+      }
+      const top = topOverlay()
+      if (top && !top.allowsUndo) return
+      return cmd === 'undo' ? undo() : redo()
+    }
     case 'reports':
       return ui.toggleReports()
     case 'library':
@@ -232,7 +247,9 @@ export default function App() {
           }
         }
         const action = actions[key]
-        if (action && !(inText && (key === 'd' || key === 'f'))) {
+        // While typing, only Ctrl+S (handled above) acts on the project; every
+        // other modifier key keeps its normal text-editing meaning.
+        if (action && !inText) {
           e.preventDefault()
           action()
         }

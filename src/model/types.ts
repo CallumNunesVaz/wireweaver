@@ -128,6 +128,11 @@ export interface HarnessWire {
   wirePartId?: string
   color?: string
   twistedWith?: string
+  /**
+   * Conductors laid as one multi-core cable share a cableId, so reports count
+   * one cable (one BOM unit, one cut) rather than one per conductor.
+   */
+  cableId?: string
   /** User label; reports fall back to auto-numbering (W1, W2, …) per harness. */
   label?: string
 }

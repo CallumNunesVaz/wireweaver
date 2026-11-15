@@ -102,6 +102,38 @@ function instance(v: unknown): DeviceInstance | null {
   return { id: v.id, partId: v.partId, label: str(v.label, 'Device'), position: point(v.position) }
 }
 
+const PART_KINDS = new Set(['device', 'connector', 'wire', 'subassembly'])
+
+/** Enough structure that rendering and reports can rely on it. */
+export function isPartRecord(v: unknown): v is Part {
+  if (!isObj(v) || typeof v.id !== 'string' || typeof v.name !== 'string') return false
+  if (!PART_KINDS.has(v.kind as string)) return false
+  if (v.kind === 'device' && !Array.isArray(v.ports)) return false
+  if (v.kind === 'connector' && typeof v.positions !== 'number') return false
+  return true
+}
+
+export function isTemplateRecord(v: unknown): v is PinoutTemplate {
+  return (
+    isObj(v) &&
+    typeof v.id === 'string' &&
+    typeof v.name === 'string' &&
+    typeof v.connectorPartId === 'string' &&
+    Array.isArray(v.pins)
+  )
+}
+
+/** Keep only well-formed snapshot entries filed under their own id. */
+function validSnapshots<T extends { id: string }>(
+  raw: unknown,
+  ok: (v: unknown) => v is T
+): Record<string, T> {
+  const out: Record<string, T> = {}
+  if (!isObj(raw)) return out
+  for (const [key, v] of Object.entries(raw)) if (ok(v) && v.id === key) out[key] = v
+  return out
+}
+
 /**
  * Validate and migrate parsed `.wwv` JSON. Throws FileFormatError for files
  * that are not projects at all or come from a newer WireWeaver.
@@ -117,12 +149,8 @@ export function parseProjectFile(data: unknown): Project {
   if (!Array.isArray(data.deviceInstances) && !Array.isArray(data.harnesses)) {
     throw new FileFormatError('This file is not a WireWeaver project (no devices or harnesses).')
   }
-  const topPartSnapshots = isObj(data.partSnapshots)
-    ? (data.partSnapshots as Record<string, Part>)
-    : {}
-  const topTemplateSnapshots = isObj(data.templateSnapshots)
-    ? (data.templateSnapshots as Record<string, PinoutTemplate>)
-    : {}
+  const topPartSnapshots = validSnapshots(data.partSnapshots, isPartRecord)
+  const topTemplateSnapshots = validSnapshots(data.templateSnapshots, isTemplateRecord)
 
   // v1/v2 files stored a copy of the snapshot maps inside each revision. Hoist
   // those entries to the top level (top-level wins on id conflicts) and drop
@@ -133,7 +161,13 @@ export function parseProjectFile(data: unknown): Project {
     .filter(isObj)
     .filter((r) => isObj(r.project))
     .map((r) => {
-      const parsed = parseProjectFile({ ...(r.project as Obj), revisions: [] }) as Project
+      // A damaged revision is dropped rather than failing the whole file.
+      let parsed: Project
+      try {
+        parsed = parseProjectFile({ ...(r.project as Obj), revisions: [] })
+      } catch {
+        return null
+      }
       for (const [id, p] of Object.entries(parsed.partSnapshots ?? {})) {
         if (!(id in hoistedParts)) hoistedParts[id] = p
       }
@@ -152,6 +186,7 @@ export function parseProjectFile(data: unknown): Project {
         project
       }
     })
+    .filter((r): r is NonNullable<typeof r> => r !== null)
   return {
     id: str(data.id) || nanoid(),
     name: str(data.name, 'Untitled'),

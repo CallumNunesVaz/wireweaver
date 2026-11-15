@@ -451,7 +451,7 @@ function ShortcutsSection() {
               ['Ctrl+Z', 'Undo'],
               ['Ctrl+Y / Ctrl+Shift+Z', 'Redo'],
               ['Ctrl+F', 'Focus library search'],
-              ['Ctrl+D', 'Duplicate selected device/harness'],
+              ['Ctrl+D', 'Duplicate selected device'],
               ['Ctrl+L', 'Library Manager'],
               ['F2', 'Rename selected'],
               ['C', 'Connect ports (with a device selected)'],

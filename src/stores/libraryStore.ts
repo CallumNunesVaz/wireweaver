@@ -3,6 +3,7 @@ import type { Part, PinoutTemplate } from '../model/types'
 import type { LibraryChanges } from '../ipc/contract'
 import type { LibraryLike } from '../model/derivation'
 import { seedLibrary } from '../model/seed'
+import { isPartRecord, isTemplateRecord } from '../model/project-file'
 import { toast } from '../shared/toast'
 
 /** Debounce with a flush() escape hatch so pending writes survive app close. */
@@ -140,20 +141,9 @@ if (typeof window !== 'undefined' && !(window as { __ww_persistFlush__?: boolean
   })
 }
 
-function isPartLike(p: unknown): p is Part {
-  const o = p as Partial<Part> | null
-  return (
-    !!o &&
-    typeof o.id === 'string' &&
-    typeof o.name === 'string' &&
-    (o.kind === 'device' || o.kind === 'connector' || o.kind === 'wire' || o.kind === 'subassembly')
-  )
-}
+const isPartLike = isPartRecord
 
-function isTemplateLike(t: unknown): t is PinoutTemplate {
-  const o = t as Partial<PinoutTemplate> | null
-  return !!o && typeof o.id === 'string' && typeof o.name === 'string' && Array.isArray(o.pins)
-}
+const isTemplateLike = isTemplateRecord
 
 type Get = () => { loadError: string | null }
 // While a load error is unresolved, writes would replace the user's real
@@ -175,8 +165,15 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     const res = await window.ww?.library.load()
     if (!res) return
     if (res.error) {
-      // Never seed over (and later overwrite) a library we failed to read.
-      set({ parts: [], templates: [], libraryPath: libPath, loaded: true, loadError: res.error })
+      // Show every record that did load (unreadable ones were moved aside),
+      // but hold writes back and never seed until the user chooses.
+      set({
+        parts: (res.parts ?? []).filter(isPartLike),
+        templates: (res.templates ?? []).filter(isTemplateLike),
+        libraryPath: libPath,
+        loaded: true,
+        loadError: res.error
+      })
       return
     }
     const parts = (res.parts ?? []).filter(isPartLike)

@@ -466,6 +466,12 @@ export function createHarness(ws: Workspace, spec: HarnessSpec = {}): Harness {
     accessories: [],
     splices: []
   }
+  // Same invariant as the app: a port belongs to at most one harness.
+  for (const ep of h.endpoints) {
+    if (ops.findHarnessByEndpoint(ws.project.harnesses, ep.deviceInstanceId, ep.portId)) {
+      throw new Error(endpointInUseMessage(ws, ep))
+    }
+  }
   ws.project = ops.insertHarness(ws.project, h)
   for (const w of spec.wires ?? []) addWire(ws, h.id, w)
   for (const s of spec.segments ?? []) addSegment(ws, h.id, s)

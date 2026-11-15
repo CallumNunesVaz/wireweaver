@@ -2,6 +2,7 @@
  * Manufacturing documentation derived from a project: wiring tables (from–to
  * lists), cutlists and netlists, plus CSV serializers for each.
  */
+import { harnessCables } from './wiring'
 import { csvCell } from './csv'
 import type { Harness, HarnessWire, Project } from './types'
 import { isWire } from './types'
@@ -111,7 +112,31 @@ export function cutlist(lib: LibraryLike, project: Project, slackMm = 0): Cutlis
   const groups = new Map<string, CutlistRow>()
   for (const h of project.harnesses) {
     const segMap = buildSegmentMap(h)
+    const conductorsOf = (id: string): number => {
+      const p = lib.parts[id]
+      return p && isWire(p) ? Math.max(1, p.conductors ?? 1) : 1
+    }
+    // A multi-conductor cable is one cut, whatever number of its conductors
+    // are wired; its conductors run together, so they share one length.
+    for (const cable of harnessCables(h.wires, conductorsOf)) {
+      const part = lib.parts[cable.wirePartId]
+      const wirePart = part && isWire(part) ? part : undefined
+      const length = segmentLengthMm(cable.wires[0], segMap)
+      const cut = length != null && isFinite(length) ? length + slackMm : undefined
+      const row: CutlistRow = {
+        wirePart: wirePart?.name ?? '(unspecified)',
+        gauge: formatGauge(wirePart?.gauge),
+        color: wirePart?.colorCode ? `${wirePart.colorCode} cable` : 'cable',
+        cutLengthMm: cut,
+        quantity: 1
+      }
+      const key = [row.wirePart, row.gauge, row.color, row.cutLengthMm ?? '?'].join('|')
+      const existing = groups.get(key)
+      if (existing) existing.quantity += 1
+      else groups.set(key, row)
+    }
     for (const w of h.wires) {
+      if (w.wirePartId && conductorsOf(w.wirePartId) > 1) continue
       const part = w.wirePartId ? lib.parts[w.wirePartId] : undefined
       const wirePart = part && isWire(part) ? part : undefined
       const length = segmentLengthMm(w, segMap)
@@ -197,10 +222,22 @@ export function netlist(lib: LibraryLike, project: Project): Net[] {
       }
       return key
     }
+    const wireById = new Map(h.wires.map((w) => [w.id, w]))
     for (const w of h.wires) {
       const a = keyOf(w.from.end, w.from.position)
       const b = keyOf(w.to.end, w.to.position)
       if (a && b) union(a, b)
+    }
+    // Wires joined at a splice are electrically one net.
+    for (const sp of h.splices ?? []) {
+      let first: string | undefined
+      for (const id of sp.wireIds) {
+        const w = wireById.get(id)
+        const k = w ? keyOf(w.from.end, w.from.position) : undefined
+        if (!k) continue
+        if (first) union(first, k)
+        else first = k
+      }
     }
   }
 

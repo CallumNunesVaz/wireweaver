@@ -18,7 +18,7 @@ const SHORTCUTS: ShortcutRow[] = [
   { keys: ['Ctrl+Z'], action: 'Undo (in a text field: undo typing)' },
   { keys: ['Ctrl+Y', 'Ctrl+Shift+Z'], action: 'Redo' },
   { keys: ['Ctrl+F'], action: 'Focus library search' },
-  { keys: ['Ctrl+D'], action: 'Duplicate selected device/harness' },
+  { keys: ['Ctrl+D'], action: 'Duplicate selected device' },
   { keys: ['Ctrl+L'], action: 'Library Manager' },
   { keys: ['F2'], action: 'Rename selected device/harness' },
   { keys: ['C'], action: 'Connect ports (with a device selected)' },

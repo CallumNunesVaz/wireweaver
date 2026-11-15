@@ -142,9 +142,24 @@ export function assignWirePart(
   )
   const styles = conductorStyles(wirePart)
   const free = styles.find((s) => !s.label || !takenLabels.has(s.label)) ?? styles[0]
+  // Join a cable of this part on the same endpoint pair that still has a free
+  // conductor; otherwise this wire starts a new cable.
+  const members = new Map<string, number>()
+  for (const w of wires) {
+    if (w.id === wireId || !w.cableId || w.wirePartId !== wirePart.id) continue
+    if ([w.from.end, w.to.end].sort().join('~') !== pair) continue
+    members.set(w.cableId, (members.get(w.cableId) ?? 0) + 1)
+  }
+  const cableId = [...members].find(([, n]) => n < conductors)?.[0] ?? nanoid()
   return wires.map((w) =>
     w.id === wireId
-      ? { ...w, wirePartId: wirePart.id, color: free.color ?? w.color, label: free.label ?? w.label }
+      ? {
+          ...w,
+          wirePartId: wirePart.id,
+          cableId,
+          color: free.color ?? w.color,
+          label: free.label ?? w.label
+        }
       : w
   )
 }
@@ -170,8 +185,11 @@ export function planCableDeploy(
   const take = (list: PinDef[], pin: PinDef) => list.splice(list.indexOf(pin), 1)[0]
 
   const strands: HarnessWire[] = []
+  // Every conductor (and the shield) of this cable shares one cable identity.
+  const cableId = nanoid()
   const make = (pa: PinDef, pb: PinDef, color?: string, label?: string): HarnessWire => ({
     id: nanoid(),
+    cableId,
     from: { end: a.label, position: pa.position },
     to: { end: b.label, position: pb.position },
     wirePartId: wirePart.id,
@@ -208,4 +226,39 @@ export function nextSpliceName(splices: HarnessSplice[] | undefined): string {
   let n = 1
   while (taken.has(`Splice ${n}`)) n++
   return `Splice ${n}`
+}
+
+/**
+ * Physical cables in a harness for multi-conductor wire parts: conductors
+ * sharing a `cableId` are one cable. Wires from before cable identities
+ * existed fall back to grouping by part and endpoint pair, rounding up by the
+ * part's conductor count. Returns one entry per cable.
+ */
+export function harnessCables(
+  wires: HarnessWire[],
+  conductorsOf: (wirePartId: string) => number
+): { wirePartId: string; wires: HarnessWire[] }[] {
+  const byCable = new Map<string, { wirePartId: string; wires: HarnessWire[] }>()
+  const legacy = new Map<string, { wirePartId: string; wires: HarnessWire[] }>()
+  for (const w of wires) {
+    if (!w.wirePartId || conductorsOf(w.wirePartId) <= 1) continue
+    if (w.cableId) {
+      const g = byCable.get(w.cableId) ?? { wirePartId: w.wirePartId, wires: [] }
+      g.wires.push(w)
+      byCable.set(w.cableId, g)
+    } else {
+      const key = `${w.wirePartId}|${[w.from.end, w.to.end].sort().join('~')}`
+      const g = legacy.get(key) ?? { wirePartId: w.wirePartId, wires: [] }
+      g.wires.push(w)
+      legacy.set(key, g)
+    }
+  }
+  const out = [...byCable.values()]
+  for (const g of legacy.values()) {
+    const n = Math.max(1, conductorsOf(g.wirePartId))
+    for (let i = 0; i < g.wires.length; i += n) {
+      out.push({ wirePartId: g.wirePartId, wires: g.wires.slice(i, i + n) })
+    }
+  }
+  return out
 }
