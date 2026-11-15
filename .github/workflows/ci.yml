@@ -4,12 +4,13 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+
 jobs:
-  build:
+  checks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
@@ -18,10 +19,62 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - name: End-to-end smoke test
+
+  e2e:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      # npm ci does not always fetch Electron's binary; make sure it exists.
+      - run: node node_modules/electron/install.js
+      - run: npm i --no-save playwright-core
+      - name: E2E smoke test (Linux)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update && sudo apt-get install -y xvfb
-          # npm ci does not always fetch Electron's binary; make sure it exists.
-          node node_modules/electron/install.js
-          npm i --no-save playwright-core
           xvfb-run -a npm run test:e2e
+      - name: E2E smoke test (macOS)
+        if: runner.os == 'macOS'
+        run: npm run test:e2e
+      # `npm run test:e2e` uses POSIX `WW_E2E=1` env syntax, which cmd.exe on
+      # Windows does not understand; run vitest directly with the env set here.
+      - name: E2E smoke test (Windows)
+        if: runner.os == 'Windows'
+        run: npx vitest run tests/smoke.test.ts
+        env:
+          WW_E2E: '1'
+
+  package:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # npm ci does not always fetch Electron's binary; make sure it exists.
+      - run: node node_modules/electron/install.js
+      - run: npx electron-vite build
+      - name: Build unpacked app (unsigned)
+        run: npx electron-builder --dir
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wireweaver-${{ matrix.os }}
+          path: dist/
+          retention-days: 7

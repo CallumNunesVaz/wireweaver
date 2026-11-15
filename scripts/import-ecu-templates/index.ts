@@ -36,21 +36,6 @@ interface PinoutTemplate {
   pins: { position: number; signal: string; signalClass?: string; maxCurrentAmps?: number }[]
 }
 
-// The Deutsch connector IPNs and template IDs from the deutsch .wwlib.
-// These are auto-generated — referencing by internalPartNumber is the convention.
-const DT_2P_REC_IPN = 'DT04-02P-E001'
-const DT_4P_REC_IPN = 'DT04-04P-E001'
-const DT_6P_REC_IPN = 'DT04-06P-E001'
-const DT_8P_REC_IPN = 'DT04-08P-E001'
-
-// Deutsch template IDs
-const DT_TPL_2POS = 'dt-tpl-2pos-power'
-const DT_TPL_4POS = 'dt-tpl-4pos-canpower'
-const DT_TPL_6POS_INJ = 'dt-tpl-6pos-injector'
-const DT_TPL_8POS_SENS = 'dt-tpl-8pos-sensor'
-const DT_TPL_6POS_AN = 'dt-tpl-6pos-analog'
-const DT_TPL_8POS_IGN = 'dt-tpl-8pos-ignition'
-
 // Since we're generating templates locally, we embed them.
 const LOCAL_TEMPLATES: PinoutTemplate[] = [
   {
