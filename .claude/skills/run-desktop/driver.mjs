@@ -14,6 +14,7 @@
 //
 // See SKILL.md in this directory for the gotchas — read it first.
 import * as fs from 'node:fs'
+import * as os from 'node:os'
 import * as path from 'node:path'
 import * as readline from 'node:readline'
 import { createRequire } from 'node:module'
@@ -23,8 +24,8 @@ const APP_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../.
 const require = createRequire(path.join(APP_DIR, 'package.json'))
 const { _electron: electron } = require('playwright-core')
 
-const SHOT_DIR = process.env.SCREENSHOT_DIR || '/tmp/ww-shots'
-const CONFIG_DIR = process.env.WW_CONFIG_DIR || '/tmp/ww-uitest-config'
+const SHOT_DIR = process.env.SCREENSHOT_DIR || path.join(os.tmpdir(), 'ww-shots')
+const CONFIG_DIR = process.env.WW_CONFIG_DIR || path.join(os.tmpdir(), 'ww-uitest-config')
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -58,10 +59,18 @@ export async function launch(options = {}) {
     )
   }
   const app = await electron.launch({
-    executablePath: path.join(APP_DIR, 'node_modules/electron/dist/electron'),
-    args: ['--no-sandbox', path.join(APP_DIR, 'out/main/index.js')],
+    // `require('electron')` returns the path to the platform's Electron binary
+    // (dist/electron on Linux, Electron.app/.../Electron on macOS, electron.exe
+    // on Windows), so this works on every OS.
+    executablePath: require('electron'),
+    // `--user-data-dir` isolates userData (library, settings, recents) on every
+    // OS, not just Linux (where XDG_CONFIG_HOME would otherwise be honoured).
+    args: ['--no-sandbox', `--user-data-dir=${userData}`, path.join(APP_DIR, 'out/main/index.js')],
     cwd: APP_DIR,
-    env: { ...process.env, XDG_CONFIG_HOME: CONFIG_DIR, DISPLAY: process.env.DISPLAY || ':1' },
+    env: {
+      ...process.env,
+      ...(process.platform === 'linux' ? { DISPLAY: process.env.DISPLAY || ':1' } : {})
+    },
     timeout: 30000
   })
   const page = await app.firstWindow()

@@ -45,10 +45,11 @@ await closeApp(app, page)               // NOT app.close() — see gotcha 5
 Run it: `node flow.mjs` (add `dangerouslyDisableSandbox` if sandboxed shells
 block X11). `node driver.mjs` alone gives a stdin REPL with the same commands.
 
-`launch()` isolates the app: `XDG_CONFIG_HOME=/tmp/ww-uitest-config` so the
-user's real library/recents are never touched. Test projects should carry
-`partSnapshots`/`templateSnapshots` so they are self-contained (snapshots are
-merged into the sandboxed library on open).
+`launch()` isolates the app on every OS by launching Electron with
+`--user-data-dir=<dir>` (resolved from `WW_CONFIG_DIR`, defaulting under
+`os.tmpdir()`), so the user's real library/recents are never touched. Test
+projects should carry `partSnapshots`/`templateSnapshots` so they are
+self-contained (snapshots are merged into the sandboxed library on open).
 
 ## Helper semantics (hard-won — don't rediscover)
 
