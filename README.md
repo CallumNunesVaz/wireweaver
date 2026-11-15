@@ -183,8 +183,6 @@ WebP and GIF are accepted (no SVG), up to 20 MB.
 
 ## Known follow-ups (not yet done)
 
-- **Bundled content packs**: `data/` is gitignored, so the `.wwlib` packs must be
-  regenerated (`scripts/import-*`) or committed before a packaged build ships them.
 - **Fully self-contained projects** (snapshot-first, with an explicit "update from
   library") are not implemented; library edits still flow live into projects.
 - **Subassemblies** are saved reusable harnesses matched to placed devices by port id;

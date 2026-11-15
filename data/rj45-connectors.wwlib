@@ -1,0 +1,181 @@
+{
+  "parts": [
+    {
+      "id": "rj45-8p8c-plug",
+      "kind": "connector",
+      "name": "8P8C Modular Plug (RJ45)",
+      "type": "COTS",
+      "internalPartNumber": "WW-RJ45-8P8C-PLUG",
+      "manufacturer": "Stewart Connector",
+      "manufacturerPartNumber": "SS-39200-001",
+      "manufacturerPartUrl": "https://www.belfuse.com/product-detail/stewart-connector/ss-39200-001",
+      "supplier": "Digi-Key",
+      "supplierPartNumber": "SS-39200-001",
+      "notes": "8P8C modular plug for Cat5e/Cat6 termination. Mates with 8P8C modular jack.",
+      "positions": 8,
+      "gender": "male",
+      "matingConnectorPartId": "rj45-8p8c-jack",
+      "weightGrams": 2.5
+    },
+    {
+      "id": "rj45-8p8c-jack",
+      "kind": "connector",
+      "name": "8P8C Modular Jack (RJ45)",
+      "type": "COTS",
+      "internalPartNumber": "WW-RJ45-8P8C-JACK",
+      "manufacturer": "Stewart Connector",
+      "manufacturerPartNumber": "SS-6488S-A-NF",
+      "manufacturerPartUrl": "https://www.belfuse.com/product-detail/stewart-connector/ss-6488s-a-nf",
+      "supplier": "Digi-Key",
+      "supplierPartNumber": "SS-6488S-A-NF",
+      "notes": "8P8C modular jack, panel mount. Mates with 8P8C modular plug.",
+      "positions": 8,
+      "gender": "female",
+      "matingConnectorPartId": "rj45-8p8c-plug",
+      "weightGrams": 8
+    }
+  ],
+  "templates": [
+    {
+      "id": "rj45-tpl-t568a",
+      "name": "T568A Ethernet",
+      "connectorPartId": "rj45-8p8c-jack",
+      "pins": [
+        {
+          "position": 1,
+          "signal": "TX3+",
+          "signalClass": "data"
+        },
+        {
+          "position": 2,
+          "signal": "TX3-",
+          "signalClass": "data"
+        },
+        {
+          "position": 3,
+          "signal": "TX2+",
+          "signalClass": "data"
+        },
+        {
+          "position": 4,
+          "signal": "RX1+",
+          "signalClass": "data"
+        },
+        {
+          "position": 5,
+          "signal": "RX1-",
+          "signalClass": "data"
+        },
+        {
+          "position": 6,
+          "signal": "TX2-",
+          "signalClass": "data"
+        },
+        {
+          "position": 7,
+          "signal": "TX4+",
+          "signalClass": "data"
+        },
+        {
+          "position": 8,
+          "signal": "TX4-",
+          "signalClass": "data"
+        }
+      ]
+    },
+    {
+      "id": "rj45-tpl-t568b",
+      "name": "T568B Ethernet",
+      "connectorPartId": "rj45-8p8c-jack",
+      "pins": [
+        {
+          "position": 1,
+          "signal": "TX2+",
+          "signalClass": "data"
+        },
+        {
+          "position": 2,
+          "signal": "TX2-",
+          "signalClass": "data"
+        },
+        {
+          "position": 3,
+          "signal": "TX3+",
+          "signalClass": "data"
+        },
+        {
+          "position": 4,
+          "signal": "RX1+",
+          "signalClass": "data"
+        },
+        {
+          "position": 5,
+          "signal": "RX1-",
+          "signalClass": "data"
+        },
+        {
+          "position": 6,
+          "signal": "TX3-",
+          "signalClass": "data"
+        },
+        {
+          "position": 7,
+          "signal": "TX4+",
+          "signalClass": "data"
+        },
+        {
+          "position": 8,
+          "signal": "TX4-",
+          "signalClass": "data"
+        }
+      ]
+    },
+    {
+      "id": "rj45-tpl-straight",
+      "name": "8P8C Straight-through",
+      "connectorPartId": "rj45-8p8c-jack",
+      "pins": [
+        {
+          "position": 1,
+          "signal": "W1",
+          "signalClass": "data"
+        },
+        {
+          "position": 2,
+          "signal": "W2",
+          "signalClass": "data"
+        },
+        {
+          "position": 3,
+          "signal": "W3",
+          "signalClass": "data"
+        },
+        {
+          "position": 4,
+          "signal": "W4",
+          "signalClass": "data"
+        },
+        {
+          "position": 5,
+          "signal": "W5",
+          "signalClass": "data"
+        },
+        {
+          "position": 6,
+          "signal": "W6",
+          "signalClass": "data"
+        },
+        {
+          "position": 7,
+          "signal": "W7",
+          "signalClass": "data"
+        },
+        {
+          "position": 8,
+          "signal": "W8",
+          "signalClass": "data"
+        }
+      ]
+    }
+  ]
+}

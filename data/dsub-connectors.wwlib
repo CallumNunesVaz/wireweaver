@@ -1,0 +1,374 @@
+{
+  "parts": [
+    {
+      "id": "dsub-de-9-m",
+      "kind": "connector",
+      "name": "D-Sub DE-9 Male",
+      "type": "COTS",
+      "internalPartNumber": "WW-DSUB-dsub-de-9-m",
+      "manufacturer": "Amphenol",
+      "manufacturerPartNumber": "DE-9M",
+      "manufacturerPartUrl": "https://www.amphenol-cs.com/product/de-9m.html",
+      "supplier": "Digi-Key",
+      "supplierPartNumber": "DE-9-M",
+      "notes": "D-Sub DE-9 male connector. Mates with D-Sub DE-9 female.",
+      "positions": 9,
+      "gender": "male",
+      "matingConnectorPartId": "dsub-de-9-f",
+      "weightGrams": 12.2
+    },
+    {
+      "id": "dsub-de-9-f",
+      "kind": "connector",
+      "name": "D-Sub DE-9 Female",
+      "type": "COTS",
+      "internalPartNumber": "WW-DSUB-dsub-de-9-f",
+      "manufacturer": "Amphenol",
+      "manufacturerPartNumber": "DE-9F",
+      "manufacturerPartUrl": "https://www.amphenol-cs.com/product/de-9f.html",
+      "supplier": "Digi-Key",
+      "supplierPartNumber": "DE-9-F",
+      "notes": "D-Sub DE-9 female connector. Mates with D-Sub DE-9 male.",
+      "positions": 9,
+      "gender": "female",
+      "matingConnectorPartId": "dsub-de-9-m",
+      "weightGrams": 12.2
+    },
+    {
+      "id": "dsub-da-15-m",
+      "kind": "connector",
+      "name": "D-Sub DA-15 Male",
+      "type": "COTS",
+      "internalPartNumber": "WW-DSUB-dsub-da-15-m",
+      "manufacturer": "Amphenol",
+      "manufacturerPartNumber": "DA-15M",
+      "manufacturerPartUrl": "https://www.amphenol-cs.com/product/da-15m.html",
+      "supplier": "Digi-Key",
+      "supplierPartNumber": "DA-15-M",
+      "notes": "D-Sub DA-15 male connector. Mates with D-Sub DA-15 female.",
+      "positions": 15,
+      "gender": "male",
+      "matingConnectorPartId": "dsub-da-15-f",
+      "weightGrams": 17
+    },
+    {
+      "id": "dsub-da-15-f",
+      "kind": "connector",
+      "name": "D-Sub DA-15 Female",
+      "type": "COTS",
+      "internalPartNumber": "WW-DSUB-dsub-da-15-f",
+      "manufacturer": "Amphenol",
+      "manufacturerPartNumber": "DA-15F",
+      "manufacturerPartUrl": "https://www.amphenol-cs.com/product/da-15f.html",
+      "supplier": "Digi-Key",
+      "supplierPartNumber": "DA-15-F",
+      "notes": "D-Sub DA-15 female connector. Mates with D-Sub DA-15 male.",
+      "positions": 15,
+      "gender": "female",
+      "matingConnectorPartId": "dsub-da-15-m",
+      "weightGrams": 17
+    },
+    {
+      "id": "dsub-db-25-m",
+      "kind": "connector",
+      "name": "D-Sub DB-25 Male",
+      "type": "COTS",
+      "internalPartNumber": "WW-DSUB-dsub-db-25-m",
+      "manufacturer": "Amphenol",
+      "manufacturerPartNumber": "DB-25M",
+      "manufacturerPartUrl": "https://www.amphenol-cs.com/product/db-25m.html",
+      "supplier": "Digi-Key",
+      "supplierPartNumber": "DB-25-M",
+      "notes": "D-Sub DB-25 male connector. Mates with D-Sub DB-25 female.",
+      "positions": 25,
+      "gender": "male",
+      "matingConnectorPartId": "dsub-db-25-f",
+      "weightGrams": 25
+    },
+    {
+      "id": "dsub-db-25-f",
+      "kind": "connector",
+      "name": "D-Sub DB-25 Female",
+      "type": "COTS",
+      "internalPartNumber": "WW-DSUB-dsub-db-25-f",
+      "manufacturer": "Amphenol",
+      "manufacturerPartNumber": "DB-25F",
+      "manufacturerPartUrl": "https://www.amphenol-cs.com/product/db-25f.html",
+      "supplier": "Digi-Key",
+      "supplierPartNumber": "DB-25-F",
+      "notes": "D-Sub DB-25 female connector. Mates with D-Sub DB-25 male.",
+      "positions": 25,
+      "gender": "female",
+      "matingConnectorPartId": "dsub-db-25-m",
+      "weightGrams": 25
+    }
+  ],
+  "templates": [
+    {
+      "id": "dsub-tpl-de9-rs232",
+      "name": "DE-9 RS-232",
+      "connectorPartId": "dsub-de-9-m",
+      "pins": [
+        {
+          "position": 1,
+          "signal": "DCD",
+          "signalClass": "data"
+        },
+        {
+          "position": 2,
+          "signal": "RXD",
+          "signalClass": "data"
+        },
+        {
+          "position": 3,
+          "signal": "TXD",
+          "signalClass": "data"
+        },
+        {
+          "position": 4,
+          "signal": "DTR",
+          "signalClass": "data"
+        },
+        {
+          "position": 5,
+          "signal": "GND",
+          "signalClass": "ground"
+        },
+        {
+          "position": 6,
+          "signal": "DSR",
+          "signalClass": "data"
+        },
+        {
+          "position": 7,
+          "signal": "RTS",
+          "signalClass": "data"
+        },
+        {
+          "position": 8,
+          "signal": "CTS",
+          "signalClass": "data"
+        },
+        {
+          "position": 9,
+          "signal": "RI",
+          "signalClass": "data"
+        }
+      ]
+    },
+    {
+      "id": "dsub-tpl-db25-parallel",
+      "name": "DB-25 Parallel",
+      "connectorPartId": "dsub-db-25-f",
+      "pins": [
+        {
+          "position": 1,
+          "signal": "STROBE",
+          "signalClass": "data"
+        },
+        {
+          "position": 2,
+          "signal": "D0",
+          "signalClass": "data"
+        },
+        {
+          "position": 3,
+          "signal": "D1",
+          "signalClass": "data"
+        },
+        {
+          "position": 4,
+          "signal": "D2",
+          "signalClass": "data"
+        },
+        {
+          "position": 5,
+          "signal": "D3",
+          "signalClass": "data"
+        },
+        {
+          "position": 6,
+          "signal": "D4",
+          "signalClass": "data"
+        },
+        {
+          "position": 7,
+          "signal": "D5",
+          "signalClass": "data"
+        },
+        {
+          "position": 8,
+          "signal": "D6",
+          "signalClass": "data"
+        },
+        {
+          "position": 9,
+          "signal": "D7",
+          "signalClass": "data"
+        },
+        {
+          "position": 10,
+          "signal": "ACK",
+          "signalClass": "data"
+        },
+        {
+          "position": 11,
+          "signal": "BUSY",
+          "signalClass": "data"
+        },
+        {
+          "position": 12,
+          "signal": "PE",
+          "signalClass": "data"
+        },
+        {
+          "position": 13,
+          "signal": "SLCT",
+          "signalClass": "data"
+        },
+        {
+          "position": 14,
+          "signal": "AFD",
+          "signalClass": "data"
+        },
+        {
+          "position": 15,
+          "signal": "ERR",
+          "signalClass": "data"
+        },
+        {
+          "position": 16,
+          "signal": "INIT",
+          "signalClass": "data"
+        },
+        {
+          "position": 17,
+          "signal": "SLIN",
+          "signalClass": "data"
+        },
+        {
+          "position": 18,
+          "signal": "GND",
+          "signalClass": "ground"
+        },
+        {
+          "position": 19,
+          "signal": "GND",
+          "signalClass": "ground"
+        },
+        {
+          "position": 20,
+          "signal": "GND",
+          "signalClass": "ground"
+        },
+        {
+          "position": 21,
+          "signal": "GND",
+          "signalClass": "ground"
+        },
+        {
+          "position": 22,
+          "signal": "GND",
+          "signalClass": "ground"
+        },
+        {
+          "position": 23,
+          "signal": "GND",
+          "signalClass": "ground"
+        },
+        {
+          "position": 24,
+          "signal": "GND",
+          "signalClass": "ground"
+        },
+        {
+          "position": 25,
+          "signal": "GND",
+          "signalClass": "ground"
+        }
+      ]
+    },
+    {
+      "id": "dsub-tpl-da15-vga",
+      "name": "DA-15 VGA",
+      "connectorPartId": "dsub-da-15-m",
+      "pins": [
+        {
+          "position": 1,
+          "signal": "RED",
+          "signalClass": "data"
+        },
+        {
+          "position": 2,
+          "signal": "GREEN",
+          "signalClass": "data"
+        },
+        {
+          "position": 3,
+          "signal": "BLUE",
+          "signalClass": "data"
+        },
+        {
+          "position": 4,
+          "signal": "MONID2",
+          "signalClass": "data"
+        },
+        {
+          "position": 5,
+          "signal": "GND",
+          "signalClass": "ground"
+        },
+        {
+          "position": 6,
+          "signal": "RED_RTN",
+          "signalClass": "ground"
+        },
+        {
+          "position": 7,
+          "signal": "GREEN_RTN",
+          "signalClass": "ground"
+        },
+        {
+          "position": 8,
+          "signal": "BLUE_RTN",
+          "signalClass": "ground"
+        },
+        {
+          "position": 9,
+          "signal": "+5V",
+          "signalClass": "power"
+        },
+        {
+          "position": 10,
+          "signal": "GND",
+          "signalClass": "ground"
+        },
+        {
+          "position": 11,
+          "signal": "MONID0",
+          "signalClass": "data"
+        },
+        {
+          "position": 12,
+          "signal": "DDC_SDA",
+          "signalClass": "data"
+        },
+        {
+          "position": 13,
+          "signal": "HSYNC",
+          "signalClass": "data"
+        },
+        {
+          "position": 14,
+          "signal": "VSYNC",
+          "signalClass": "data"
+        },
+        {
+          "position": 15,
+          "signal": "DDC_SCL",
+          "signalClass": "data"
+        }
+      ]
+    }
+  ]
+}
