@@ -12,13 +12,15 @@ import {
 } from 'electron'
 import { basename, extname, isAbsolute, join, relative, resolve } from 'node:path'
 import { promises as fs, rmSync } from 'node:fs'
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
+import { applyChanges, loadLibrary, loadParts, writeFileAtomic } from './libraryStorage'
 import type {
   IpcArgs,
   IpcChannel,
   IpcEvents,
   IpcResult,
+  LibraryChanges,
   MenuCommand,
   RecentEntry,
   ThemePreference
@@ -69,8 +71,6 @@ function libraryDir(): string {
   return settings.libraryPath ?? DEFAULT_LIBRARY_DIR
 }
 const imagesDir = () => join(libraryDir(), 'images')
-const partsFile = () => join(libraryDir(), 'parts.json')
-const templatesFile = () => join(libraryDir(), 'pinout-templates.json')
 
 /** Bundled starter packs (repo data/ in dev, resources in prod). */
 function packsDir(): string {
@@ -83,24 +83,6 @@ async function saveSettings(patch: Partial<AppSettings>): Promise<void> {
 }
 
 // ---------- File helpers ----------
-
-/** Write via a unique temp file + fsync + rename so a crash never leaves a torn file. */
-async function writeFileAtomic(file: string, data: string | Buffer): Promise<void> {
-  const tmp = `${file}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`
-  const handle = await fs.open(tmp, 'w')
-  try {
-    await handle.writeFile(data)
-    await handle.sync()
-  } finally {
-    await handle.close()
-  }
-  try {
-    await fs.rename(tmp, file)
-  } catch (e) {
-    await fs.unlink(tmp).catch(() => {})
-    throw e
-  }
-}
 
 async function writeJsonAtomic(file: string, data: unknown): Promise<void> {
   await writeFileAtomic(file, JSON.stringify(data, null, 2))
@@ -127,13 +109,6 @@ async function readJsonFile<T>(file: string): Promise<ReadOutcome<T>> {
 async function readJson<T>(file: string, fallback: T): Promise<T> {
   const r = await readJsonFile<T>(file)
   return r.ok ? r.data : fallback
-}
-
-/** Keep a damaged file aside instead of letting the next save overwrite it. */
-async function quarantine(file: string): Promise<string> {
-  const dest = `${file}.corrupt-${new Date().toISOString().replace(/[:.]/g, '-')}`
-  await fs.copyFile(file, dest).catch(() => {})
-  return dest
 }
 
 // ---------- Path grants ----------
@@ -436,6 +411,39 @@ function handle<C extends IpcChannel>(
 
 const isString = (v: unknown): v is string => typeof v === 'string'
 
+const isRecord = (v: unknown): v is { id: string } & Record<string, unknown> =>
+  !!v && typeof v === 'object' && !Array.isArray(v) && isString((v as { id?: unknown }).id)
+
+/** Shape-check the applyChanges payload before touching the library on disk. */
+function validateLibraryChanges(payload: unknown): LibraryChanges {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('Invalid library changes payload')
+  }
+  const p = payload as Record<string, unknown>
+  const upsertParts = p.upsertParts
+  const removePartIds = p.removePartIds
+  const upsertTemplates = p.upsertTemplates
+  const removeTemplateIds = p.removeTemplateIds
+  if (!Array.isArray(upsertParts) || upsertParts.some((x) => !isRecord(x))) {
+    throw new Error('Invalid library changes payload: upsertParts')
+  }
+  if (!Array.isArray(removePartIds) || removePartIds.some((x) => !isString(x))) {
+    throw new Error('Invalid library changes payload: removePartIds')
+  }
+  if (!Array.isArray(upsertTemplates) || upsertTemplates.some((x) => !isRecord(x))) {
+    throw new Error('Invalid library changes payload: upsertTemplates')
+  }
+  if (!Array.isArray(removeTemplateIds) || removeTemplateIds.some((x) => !isString(x))) {
+    throw new Error('Invalid library changes payload: removeTemplateIds')
+  }
+  return {
+    upsertParts: upsertParts as LibraryChanges['upsertParts'],
+    removePartIds: removePartIds as LibraryChanges['removePartIds'],
+    upsertTemplates: upsertTemplates as LibraryChanges['upsertTemplates'],
+    removeTemplateIds: removeTemplateIds as LibraryChanges['removeTemplateIds']
+  }
+}
+
 async function readRecent(): Promise<RecentEntry[]> {
   const list = await readJson<RecentEntry[]>(recentFile(), [])
   return Array.isArray(list)
@@ -454,43 +462,12 @@ async function registerIpc(): Promise<void> {
   }
 
   handle('library:load', async () => {
-    await fs.mkdir(imagesDir(), { recursive: true })
-    const parts = await readJsonFile<unknown>(partsFile())
-    const templates = await readJsonFile<unknown>(templatesFile())
-    const problems: string[] = []
-    for (const [label, file, r] of [
-      ['parts.json', partsFile(), parts],
-      ['pinout-templates.json', templatesFile(), templates]
-    ] as const) {
-      if (!r.ok && !r.missing) {
-        const kept = await quarantine(file)
-        problems.push(`${label}: ${r.error} A copy was kept at ${kept}.`)
-      } else if (r.ok && !Array.isArray(r.data)) {
-        const kept = await quarantine(file)
-        problems.push(`${label}: unexpected content. A copy was kept at ${kept}.`)
-      }
-    }
-    if (problems.length) {
-      return { parts: [], templates: [], isNew: false, error: problems.join('\n') }
-    }
-    return {
-      parts: parts.ok ? (parts.data as never) : [],
-      templates: templates.ok ? (templates.data as never) : [],
-      isNew: !parts.ok && parts.missing
-    }
+    return await loadLibrary(libraryDir())
   })
 
-  handle('library:saveParts', async (_e, parts) => {
-    if (!Array.isArray(parts)) throw new Error('Invalid parts payload')
-    await fs.mkdir(imagesDir(), { recursive: true })
-    await writeJsonAtomic(partsFile(), parts)
-    return true
-  })
-
-  handle('library:saveTemplates', async (_e, templates) => {
-    if (!Array.isArray(templates)) throw new Error('Invalid templates payload')
-    await fs.mkdir(imagesDir(), { recursive: true })
-    await writeJsonAtomic(templatesFile(), templates)
+  handle('library:applyChanges', async (_e, payload) => {
+    const changes = validateLibraryChanges(payload)
+    await applyChanges(libraryDir(), changes)
     return true
   })
 
@@ -698,23 +675,26 @@ async function registerIpc(): Promise<void> {
   })
 
   handle('part-lookup:search', async (_e, query) => {
-    const parts = await readJson<Record<string, unknown>[]>(partsFile(), [])
+    const parts = await loadParts(libraryDir())
     const q = String(query ?? '').toLowerCase().trim()
     if (!q || !Array.isArray(parts)) return []
     const fields = ['name', 'internalPartNumber', 'manufacturer', 'manufacturerPartNumber', 'supplierPartNumber', 'notes']
     return parts
-      .filter((p) => fields.some((f) => isString(p[f]) && (p[f] as string).toLowerCase().includes(q)))
+      .filter((p) => fields.some((f) => isString((p as Record<string, unknown>)[f]) && ((p as Record<string, unknown>)[f] as string).toLowerCase().includes(q)))
       .slice(0, 20)
-      .map((p) => ({
-        id: String(p.id),
-        kind: String(p.kind),
-        name: String(p.name),
-        internalPartNumber: String(p.internalPartNumber ?? ''),
-        manufacturer: String(p.manufacturer ?? ''),
-        manufacturerPartNumber: String(p.manufacturerPartNumber ?? ''),
-        positions: typeof p.positions === 'number' ? p.positions : undefined,
-        gender: isString(p.gender) ? p.gender : undefined
-      }))
+      .map((p) => {
+        const rec = p as Record<string, unknown>
+        return {
+          id: String(rec.id),
+          kind: String(rec.kind),
+          name: String(rec.name),
+          internalPartNumber: String(rec.internalPartNumber ?? ''),
+          manufacturer: String(rec.manufacturer ?? ''),
+          manufacturerPartNumber: String(rec.manufacturerPartNumber ?? ''),
+          positions: typeof rec.positions === 'number' ? rec.positions : undefined,
+          gender: isString(rec.gender) ? rec.gender : undefined
+        }
+      })
   })
 
   handle('library:listPacks', async () => {
@@ -761,17 +741,17 @@ async function registerIpc(): Promise<void> {
     return libraryDir()
   })
 
-  // Copy the current library into another folder and switch to it. Files
-  // already at the destination are kept as timestamped backups, never
-  // silently overwritten.
+  // Copy the current library into another folder and switch to it. Directories
+  // already at the destination are kept as timestamped backups, never silently
+  // overwritten.
   handle('library:relocatePath', async (_e, path) => {
     const target = requireLibraryTarget(path)
     const old = libraryDir()
     if (resolve(old) === target) return libraryDir()
     await fs.mkdir(join(target, 'images'), { recursive: true })
     const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-    for (const f of ['parts.json', 'pinout-templates.json']) {
-      const dest = join(target, f)
+    for (const sub of ['parts', 'templates']) {
+      const dest = join(target, sub)
       try {
         await fs.access(dest)
         await fs.rename(dest, `${dest}.backup-${stamp}`)
@@ -779,7 +759,7 @@ async function registerIpc(): Promise<void> {
         /* nothing to back up */
       }
       try {
-        await fs.copyFile(join(old, f), dest)
+        await fs.cp(join(old, sub), dest, { recursive: true })
       } catch {
         /* source may not exist yet */
       }

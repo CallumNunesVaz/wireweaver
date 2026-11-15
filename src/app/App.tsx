@@ -343,7 +343,7 @@ export default function App() {
   )
 }
 
-/** Shown when the library file exists but could not be read. */
+/** Shown when library records could not be read. */
 function LibraryErrorBanner() {
   const error = useLibraryStore((s) => s.loadError)
   const load = useLibraryStore((s) => s.load)
@@ -353,7 +353,7 @@ function LibraryErrorBanner() {
     <div role="alert" className="flex items-start gap-3 border-b border-danger/40 bg-danger/10 px-3 py-2 text-xs">
       <AlertTriangle size={16} className="mt-0.5 shrink-0 text-danger" />
       <div className="min-w-0 flex-1">
-        <div className="font-semibold">Your parts library could not be read.</div>
+        <div className="font-semibold">Some library records could not be read.</div>
         <div className="whitespace-pre-line text-muted">{error}</div>
         <div className="text-muted">Library changes are not being saved until you choose an option.</div>
       </div>
@@ -361,7 +361,7 @@ function LibraryErrorBanner() {
         Retry
       </button>
       <button className="ww-btn" onClick={startFresh}>
-        Start an empty library
+        Continue and save
       </button>
     </div>
   )

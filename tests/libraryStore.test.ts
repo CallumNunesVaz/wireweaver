@@ -18,8 +18,7 @@ const tpl: PinoutTemplate = { id: 't1', name: 'T', connectorPartId: 'c1', pins: 
 
 const ww = {
   library: {
-    saveParts: vi.fn().mockResolvedValue(true),
-    saveTemplates: vi.fn().mockResolvedValue(true),
+    applyChanges: vi.fn().mockResolvedValue(true),
     getPath: vi.fn().mockResolvedValue('/tmp/lib'),
     load: vi.fn(),
     setPath: vi.fn(),
@@ -46,8 +45,12 @@ describe('libraryStore', () => {
     expect(st.loaded).toBe(true)
     expect(st.parts.length).toBeGreaterThan(0)
     expect(st.libraryPath).toBe('/tmp/lib')
-    expect(ww.library.saveParts).toHaveBeenCalled()
-    expect(ww.library.saveTemplates).toHaveBeenCalled()
+    expect(ww.library.applyChanges).toHaveBeenCalled()
+    const changes = ww.library.applyChanges.mock.calls[0][0]
+    expect(changes.upsertParts.map((p: Part) => p.id)).toEqual(st.parts.map((p) => p.id))
+    expect(changes.upsertTemplates.map((t: PinoutTemplate) => t.id)).toEqual(st.templates.map((t) => t.id))
+    expect(changes.removePartIds).toEqual([])
+    expect(changes.removeTemplateIds).toEqual([])
   })
 
   it('loads an existing library without seeding', async () => {
@@ -55,7 +58,7 @@ describe('libraryStore', () => {
     await useLibraryStore.getState().load()
     expect(useLibraryStore.getState().parts).toEqual([wire])
     expect(useLibraryStore.getState().templates).toEqual([tpl])
-    expect(ww.library.saveParts).not.toHaveBeenCalled()
+    expect(ww.library.applyChanges).not.toHaveBeenCalled()
   })
 
   it('upserts new parts with timestamps and updates existing ones', () => {
@@ -121,11 +124,11 @@ describe('libraryStore', () => {
     expect(useLibraryStore.getState().parts).toEqual([])
     useLibraryStore.getState().upsertPart(wire)
     await flushLibraryWrites()
-    expect(ww.library.saveParts).not.toHaveBeenCalled()
+    expect(ww.library.applyChanges).not.toHaveBeenCalled()
     useLibraryStore.getState().acceptEmptyLibrary()
     useLibraryStore.getState().upsertPart(wire)
     await flushLibraryWrites()
-    expect(ww.library.saveParts).toHaveBeenCalledOnce()
+    expect(ww.library.applyChanges).toHaveBeenCalledOnce()
   })
 
   it('mergeItems adds only new, well-formed items', () => {
@@ -136,5 +139,18 @@ describe('libraryStore', () => {
     })
     expect(r).toEqual({ addedParts: 1, addedTemplates: 1, skippedParts: 2, skippedTemplates: 1 })
     expect(useLibraryStore.getState().parts.map((p) => p.id)).toEqual([wire.id, 'w2'])
+  })
+
+  it('requeues changes from a failed write instead of dropping them', async () => {
+    useLibraryStore.setState({ parts: [], templates: [], loadError: null })
+    ww.library.applyChanges.mockRejectedValueOnce(new Error('disk full'))
+    useLibraryStore.getState().upsertPart(wire)
+    await flushLibraryWrites()
+    expect(ww.library.applyChanges).toHaveBeenCalledTimes(1)
+    // Next edit (a different record) carries the failed one along with it.
+    useLibraryStore.getState().upsertPart({ ...wire, id: 'w2', name: 'Two' })
+    await flushLibraryWrites()
+    const second = ww.library.applyChanges.mock.calls[1][0]
+    expect(second.upsertParts.map((p: { id: string }) => p.id).sort()).toEqual(['w1', 'w2'])
   })
 })
