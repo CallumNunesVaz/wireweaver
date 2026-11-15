@@ -144,7 +144,12 @@ describe.skipIf(!isE2E)('WireWeaver smoke test (E2E)', { timeout: 20_000 }, () =
   })
 
   it('opens the harness editor on top of the Library Manager', async () => {
-    await page.keyboard.press('ControlOrMeta+l')
+    // Open via the Tools menu: this test is about overlay stacking. (On macOS
+    // the keyboard path is the native menu accelerator, which CDP-dispatched
+    // keys don't reach; the shortcut itself is covered in dialogs.test.ts.)
+    await h.clickTitle('Tools & exports')
+    await sleep(300)
+    await h.clickText('Library Manager')
     await sleep(600)
     await page.locator('[aria-label="Library Manager"] >> text=CAN Bus').first().click()
     await sleep(300)
