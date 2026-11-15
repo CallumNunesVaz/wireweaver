@@ -1,24 +1,46 @@
 import Decimal from 'decimal.js'
 import type { BomRow } from './bom'
 
-let ratesCache: Record<string, number> | null = null
+/** EUR-referenced FX rates plus their provenance, as returned by fetchRates. */
+export interface FxRates {
+  /** ISO 8601 publication date (frankfurter's `date`); '' when the API omits it. */
+  date: string
+  /** Human-readable source of the rates. */
+  source: string
+  /** Currency code → units per EUR (EUR is always 1). */
+  rates: Record<string, number>
+}
 
-export async function fetchRates(): Promise<Record<string, number> | null> {
+const RATE_SOURCE = 'Frankfurter (api.frankfurter.dev)'
+
+let ratesCache: FxRates | null = null
+
+export async function fetchRates(): Promise<FxRates | null> {
   if (ratesCache) return ratesCache
 
   try {
     const controller = new AbortController()
     const id = setTimeout(() => controller.abort(), 5000)
-    const res = await fetch('https://api.frankfurter.app/latest', { signal: controller.signal })
+    const res = await fetch('https://api.frankfurter.dev/v1/latest', { signal: controller.signal })
     clearTimeout(id)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const data = await res.json()
-    const rates: Record<string, number> = {
-      EUR: 1,
-      ...(data.rates ?? {})
+    // API shape is flagged as uncertain: frankfurter returns
+    // { amount, base, date, rates }. Parse defensively so a changed payload
+    // degrades to `null` rather than throwing on the caller.
+    const data = (await res.json()) as { date?: unknown; rates?: unknown } | null
+    const rates: Record<string, number> = { EUR: 1 }
+    if (data && typeof data.rates === 'object' && data.rates !== null) {
+      for (const [code, value] of Object.entries(data.rates as Record<string, unknown>)) {
+        if (typeof value === 'number' && Number.isFinite(value)) rates[code] = value
+      }
     }
-    ratesCache = rates
-    return rates
+    const result: FxRates = {
+      date: data && typeof data.date === 'string' ? data.date : '',
+      source: RATE_SOURCE,
+      rates
+    }
+    ratesCache = result
+    return result
   } catch {
     return null
   }
@@ -32,8 +54,9 @@ export async function convertBomTotals(
   rows: BomRow[],
   targetCurrency: string
 ): Promise<{ convertedCost: number; rate: number } | null> {
-  const rates = await fetchRates()
-  if (!rates) return null
+  const fetched = await fetchRates()
+  if (!fetched) return null
+  const rates = fetched.rates
   const rate = rates[targetCurrency]
   if (!rate) return null
 

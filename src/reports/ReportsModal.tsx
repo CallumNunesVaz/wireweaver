@@ -15,9 +15,10 @@ import {
 } from '../model/reports'
 import { buildHtmlReport } from '../model/report-html'
 import { wirevizYaml } from '../model/wireviz'
-import { buildBom, bomTotals } from '../model/bom'
-import { convertBomTotals } from '../model/fx'
+import { buildBom, bomTotals, toCsv } from '../model/bom'
+import { convertBomTotals, fetchRates } from '../model/fx'
 import { formatMoney } from '../model/currency'
+import { confirmDialog } from '../shared/dialogs'
 import { FormboardView } from './FormboardView'
 
 function errMessage(err: unknown): string {
@@ -25,6 +26,9 @@ function errMessage(err: unknown): string {
 }
 
 type Tab = 'wiring' | 'cutlist' | 'netlist' | 'formboard'
+
+/** Currencies offered by the BOM conversion picker. */
+const TARGET_CURRENCIES = ['USD', 'EUR', 'GBP', 'AUD', 'CAD', 'JPY', 'CNY', 'CHF']
 
 /** Capture the assembly canvas as a PNG data URL; undefined when unavailable. */
 async function captureAssemblyPng(): Promise<string | undefined> {
@@ -65,7 +69,7 @@ export function ReportsModal() {
   // BOM totals + optional FX conversion.
   const bomRows = useMemo(() => buildBom(project, lib), [lib, project])
   const totals = useMemo(() => bomTotals(bomRows), [bomRows])
-  const [targetCurrency, setTargetCurrency] = useState('USD')
+  const [targetCurrency, setTargetCurrency] = useState('')
   const [converted, setConverted] = useState<{ amount: number; rate: number } | null>(null)
   const [converting, setConverting] = useState(false)
 
@@ -133,6 +137,39 @@ export function ReportsModal() {
       `${h.name.replace(/[^\w-]+/g, '_') || 'harness'}.yml`,
       'WireViz YAML',
       ['yml', 'yaml']
+    )
+  }
+
+  const exportBomReport = async () => {
+    if (targetCurrency === '') {
+      await doExport(toCsv(bomRows), `${fileBase}-bom.csv`, 'CSV', ['csv'])
+      return
+    }
+    const fetched = await fetchRates()
+    if (!fetched || !fetched.rates[targetCurrency]) {
+      toast('Could not fetch exchange rates (offline?).', 'error')
+      const useUnconverted = await confirmDialog({
+        title: 'Export without conversion?',
+        message: 'Exchange rates are unavailable.',
+        detail: 'You can still export the BOM with per-currency totals.',
+        confirmLabel: 'Export per-currency',
+        cancelLabel: 'Cancel'
+      })
+      if (useUnconverted) {
+        await doExport(toCsv(bomRows), `${fileBase}-bom.csv`, 'CSV', ['csv'])
+      }
+      return
+    }
+    await doExport(
+      toCsv(bomRows, {
+        currency: targetCurrency,
+        rates: fetched.rates,
+        rateDate: fetched.date,
+        rateSource: fetched.source
+      }),
+      `${fileBase}-bom.csv`,
+      'CSV',
+      ['csv']
     )
   }
 
@@ -356,19 +393,27 @@ export function ReportsModal() {
         )}
         <div className="ml-auto flex items-center gap-2">
           <select
-            className="ww-input w-20"
+            className="ww-input w-24"
             value={targetCurrency}
             onChange={(e) => {
               setTargetCurrency(e.target.value)
               setConverted(null)
             }}
           >
-            {['USD', 'EUR', 'GBP', 'AUD', 'CAD', 'JPY', 'CNY', 'CHF'].map((c) => (
+            <option value="">per currency</option>
+            {TARGET_CURRENCIES.map((c) => (
               <option key={c} value={c}>{c}</option>
             ))}
           </select>
-          <button className="ww-btn" onClick={doConvert} disabled={converting}>
+          <button
+            className="ww-btn"
+            onClick={doConvert}
+            disabled={converting || targetCurrency === ''}
+          >
             {converting ? 'Converting…' : 'Convert'}
+          </button>
+          <button className="ww-btn" onClick={exportBomReport}>
+            <FileDown size={14} /> BOM CSV
           </button>
           {converted && (
             <span className="text-accent font-medium">

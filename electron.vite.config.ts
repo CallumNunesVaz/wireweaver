@@ -12,7 +12,7 @@ const CSP = [
   "img-src 'self' ww: data: blob:",
   "font-src 'self' data:",
   // Exchange rates for the Reports modal's BOM currency conversion (model/fx.ts).
-  "connect-src 'self' https://api.frankfurter.app",
+  "connect-src 'self' https://api.frankfurter.dev",
   "object-src 'none'",
   "base-uri 'none'"
 ].join('; ')

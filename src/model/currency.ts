@@ -24,6 +24,17 @@ export const CURRENCIES: { code: string; label: string }[] = [
   { code: 'MXN', label: 'Mexican Peso' }
 ]
 
+/**
+ * Currencies with no fractional minor unit. Converting money into these should
+ * round to whole units rather than cents.
+ */
+const ZERO_DECIMAL_CURRENCIES = new Set(['JPY', 'KRW'])
+
+/** Decimal places to use for money in a currency (2 by default, 0 for e.g. JPY). */
+export function currencyDecimals(currency: string): number {
+  return ZERO_DECIMAL_CURRENCIES.has(currency) ? 0 : 2
+}
+
 export function formatMoney(money: Money | undefined): string {
   if (!money) return '—'
   try {
