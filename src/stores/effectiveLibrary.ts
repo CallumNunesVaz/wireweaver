@@ -10,7 +10,8 @@ import { useMemo } from 'react'
 import type { Part, PinoutTemplate, Project, WirePart } from '../model/types'
 import { isWire } from '../model/types'
 import type { LibraryLike } from '../model/derivation'
-import { runDrc, type DrcIssue } from '../model/drc'
+import type { DrcIssue } from '../model/drc'
+import { useDrc } from './drcScheduler'
 import { useLibraryStore } from './libraryStore'
 import { useProjectStore } from './projectStore'
 
@@ -98,19 +99,14 @@ export function useEffectiveLibrary(): EffectiveLibrary {
   )
 }
 
-let drcCache: { lib: LibraryLike; project: Project; issues: DrcIssue[] } | null = null
-
 /**
  * Design-rule check, computed once per (library, project) change and shared
- * by every subscriber (header badge, DRC panel).
+ * by every subscriber (header badge, DRC panel). Small projects are checked
+ * synchronously; large projects are checked off the main thread and return the
+ * last good result while the worker catches up (see `src/stores/drcScheduler.ts`).
  */
 export function useDrcIssues(): DrcIssue[] {
   const { lib } = useEffectiveLibrary()
   const project = useProjectStore((s) => s.project)
-  return useMemo(() => {
-    if (drcCache && drcCache.lib === lib && drcCache.project === project) return drcCache.issues
-    const issues = runDrc(lib, project)
-    drcCache = { lib, project, issues }
-    return issues
-  }, [lib, project])
+  return useDrc(lib, project)
 }
